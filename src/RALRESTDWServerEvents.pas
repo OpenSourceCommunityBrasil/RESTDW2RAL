@@ -5,7 +5,7 @@ interface
 uses
   Classes, SysUtils,
   RALCustomObjects, RALTypes, RALRequest, RALResponse, RALConsts,
-  RALRESTDWParams, RALRESTDWParamsMethods, RALTools, RALMIMETypes;
+  RALRESTDWParams, RALRESTDWParamsMethods, RALTools, RALMIMETypes, RALRESTDWTypes;
 
 type
   TRALRESTDWReplyEvent = procedure(AParams: TRALRESTDWParams; const AResult: TStringList) of object;
@@ -32,7 +32,6 @@ type
     procedure SetDisplayName(const AValue: string); override;
 
     procedure SetDescription(AValue: TStrings);
-    procedure SetParams(AValue: TRALRESTDWParamsMethods);
     procedure SetBaseURL(const AValue: StringRAL);
   public
     constructor Create(ACollection: TCollection); override;
@@ -44,7 +43,7 @@ type
     property DefaultContentType: StringRAL read FDefaultContentType write FDefaultContentType;
     property Description: TStrings read FDescription write SetDescription;
     property EventName: StringRAL read FEventName write FEventName;
-    property Params: TRALRESTDWParamsMethods read FParams write SetParams;
+    property Params: TRALRESTDWParamsMethods read FParams;
 
     property OnReplyEvent: TRALRESTDWReplyEvent read FOnReplyEvent write FOnReplyEvent;
     property OnReplyEventByType: TRALRESTDWReplyEventByType read FOnReplyEventByType write FOnReplyEventByType;
@@ -91,11 +90,6 @@ begin
   FDescription.Assign(AValue);
 end;
 
-procedure TRALRESTDWEvent.SetParams(AValue: TRALRESTDWParamsMethods);
-begin
-
-end;
-
 procedure TRALRESTDWEvent.ReplyEvent(ARequest: TRALRequest; AResponse: TRALResponse);
 var
   vParams: TRALRESTDWParams;
@@ -111,6 +105,7 @@ begin
 
     AResponse.ContentType := FDefaultContentType;
     FParams.CreateParams(vParams);
+    vParams.AssignRequest(ARequest);
     
     try
       if Assigned(FOnReplyEvent) then
@@ -119,8 +114,10 @@ begin
         FOnReplyEventByType(vParams, vResult, ARequest.Method, vStatusCode, vHeader);
         
       AResponse.StatusCode := vStatusCode;
-      AResponse.ResponseText := vResult.Text;
+      if Trim(vResult.Text) <> '' then
+        AResponse.Params.AddParam(cUndefined, vResult.Text, rpkBODY);
       AResponse.Params.AppendParams(vHeader, rpkHEADER);
+      vParams.AppendResponse(AResponse);
     except
       on e: Exception do
       begin
@@ -221,4 +218,3 @@ begin
 end;
 
 end.
-

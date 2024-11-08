@@ -4,29 +4,10 @@ interface
 
 uses
   Classes, SysUtils,
-  RALTypes, RALRESTDWParams;
+  RALTypes, RALRESTDWParams, RALRESTDWTypes;
 
 type
-  TRALRESTDWTypeObject = (toDataset, toParam, toMassive, toVariable, toObject);
-  TRALRESTDWObjectDirection = (odIN, odOUT, odINOUT);
-  TRALRESTDWObjectValue = (ovUnknown,     ovString,          ovSmallint,
-                           ovInteger,     ovWord,            ovBoolean,
-                           ovFloat,       ovCurrency,        ovBCD,
-                           ovDate,        ovTime,            ovDateTime,
-                           ovBytes,       ovVarBytes,        ovAutoInc,
-                           ovBlob,        ovMemo,            ovGraphic,
-                           ovFmtMemo,     ovParadoxOle,      ovDBaseOle,
-                           ovTypedBinary, ovCursor,          ovFixedChar,
-                           ovWideString,  ovLargeint,        ovADT,
-                           ovArray,       ovReference,       ovDataSet,
-                           ovOraBlob,     ovOraClob,         ovVariant,
-                           ovInterface,   ovIDispatch,       ovGuid,
-                           ovTimeStamp,   ovFMTBcd,          ovFixedWideChar,
-                           ovWideMemo,    ovOraTimeStamp,    ovOraInterval,                                   //38..41
-                           ovLongWord,    ovShortint,        ovByte,
-                           ovExtended,    ovConnection,      ovParams,
-                           ovStream,      ovTimeStampOffset, ovObject,
-                           ovSingle);
+  { TRALRESTDWParamMethod }
 
   TRALRESTDWParamMethod = class(TCollectionItem)
   private
@@ -40,6 +21,8 @@ type
   protected
     function GetDisplayName: string; override;
     procedure SetDisplayName(const AValue: string); override;
+
+    procedure AssignTo(ADest: TPersistent); override;
   public
     constructor Create(ACollection: TCollection); override;
   published
@@ -51,6 +34,8 @@ type
     property ParamName: StringRAL read FParamName write FParamName;
     property Encoded: Boolean read FEncoded write FEncoded;
   end;
+
+  { TRALRESTDWParamsMethods }
 
   TRALRESTDWParamsMethods = class(TOwnedCollection)
   private
@@ -75,12 +60,12 @@ end;
 procedure TRALRESTDWParamsMethods.CreateParams(AParam: TRALRESTDWParams);
 var
   vInt1: IntegerRAL;
-  vParam: TRALRESTDWParamMethod;
+  vParamMethod: TRALRESTDWParamMethod;
 begin
   for vInt1 := 0 to Pred(Count) do
   begin
-    vParam := TRALRESTDWParamMethod(Items[vInt1]);
-
+    vParamMethod := TRALRESTDWParamMethod(Items[vInt1]);
+    AParam.NewParam.Assign(vParamMethod);
   end;
 end;
 
@@ -123,6 +108,34 @@ begin
   if Trim(AValue) <> '' then
     FParamName := AValue;
   inherited;
+end;
+
+procedure TRALRESTDWParamMethod.AssignTo(ADest: TPersistent);
+begin
+  if ADest.InheritsFrom(TRALRESTDWJSONParam) then
+  begin
+    with ADest as TRALRESTDWJSONParam do
+    begin
+      TypeObject := Self.TypeObject;
+      ObjectDirection := Self.ObjectDirection;
+      ObjectValue := Self.ObjectValue;
+      ParamName := Self.ParamName;
+      Alias := Self.Alias;
+      Value := Self.DefaultValue;
+    end;
+  end
+  else if ADest.InheritsFrom(TRALRESTDWParamMethod) then
+  begin
+    with ADest as TRALRESTDWParamMethod do
+    begin
+      TypeObject := Self.TypeObject;
+      ObjectDirection := Self.ObjectDirection;
+      ObjectValue := Self.ObjectValue;
+      ParamName := Self.ParamName;
+      Alias := Self.Alias;
+      DefaultValue := Self.DefaultValue;
+    end;
+  end;
 end;
 
 end.
