@@ -145,11 +145,6 @@ begin
   FParams := TRALRESTDWParamsMethods.Create(Self);
 end;
 
-procedure TRALRESTDWEvent.CreateParams(AParams: TRALRESTDWParams);
-begin
-
-end;
-
 destructor TRALRESTDWEvent.Destroy;
 begin
   FreeAndNil(FDescription);

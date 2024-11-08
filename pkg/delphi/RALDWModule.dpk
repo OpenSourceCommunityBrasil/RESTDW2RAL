@@ -32,10 +32,10 @@ requires
   PascalRALDsgn;
 
 contains
-  ralrestdwmodule in 'ralrestdwmodule.pas',
-  ralrestdwparams in 'ralrestdwparams.pas',
-  ralrestdwparamsmethods in 'ralrestdwparamsmethods.pas',
-  ralrestdwserverevents in 'ralrestdwserverevents.pas',
-  RALDWModuleReg in 'RALDWModuleReg.pas';
+  RALRESTDWModule in '..\..\src\RALRESTDWModule.pas',
+  RALRESTDWParams in '..\..\src\RALRESTDWParams.pas',
+  RALRESTDWParamsMethods in '..\..\src\RALRESTDWParamsMethods.pas',
+  RALRESTDWReg in '..\..\src\RALRESTDWReg.pas',
+  RALRESTDWServerEvents in '..\..\src\RALRESTDWServerEvents.pas';
 
 end.

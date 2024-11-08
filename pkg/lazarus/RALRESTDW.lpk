@@ -2,36 +2,37 @@
 <CONFIG>
   <Package Version="5">
     <PathDelim Value="\"/>
-    <Name Value="RALDWModule"/>
+    <Name Value="RALRESTDW"/>
     <Type Value="RunAndDesignTime"/>
     <CompilerOptions>
       <Version Value="11"/>
       <PathDelim Value="\"/>
       <SearchPaths>
-        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)\"/>
+        <OtherUnitFiles Value="..\..\src"/>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
     <Files>
       <Item>
-        <Filename Value="RALDWModuleReg.pas"/>
+        <Filename Value="..\..\src\RALRESTDWReg.pas"/>
         <HasRegisterProc Value="True"/>
-        <UnitName Value="RALDWModuleReg"/>
+        <UnitName Value="RALRESTDWReg"/>
       </Item>
       <Item>
-        <Filename Value="ralrestdwmodule.pas"/>
-        <UnitName Value="ralrestdwmodule"/>
+        <Filename Value="..\..\src\RALRESTDWModule.pas"/>
+        <UnitName Value="RALRESTDWModule"/>
       </Item>
       <Item>
-        <Filename Value="ralrestdwparams.pas"/>
-        <UnitName Value="ralrestdwparams"/>
+        <Filename Value="..\..\src\RALRESTDWParams.pas"/>
+        <UnitName Value="RALRESTDWParams"/>
       </Item>
       <Item>
-        <Filename Value="ralrestdwparamsmethods.pas"/>
-        <UnitName Value="ralrestdwparamsmethods"/>
+        <Filename Value="..\..\src\RALRESTDWParamsMethods.pas"/>
+        <UnitName Value="RALRESTDWParamsMethods"/>
       </Item>
       <Item>
-        <Filename Value="ralrestdwserverevents.pas"/>
-        <UnitName Value="ralrestdwserverevents"/>
+        <Filename Value="..\..\src\RALRESTDWServerEvents.pas"/>
+        <UnitName Value="RALRESTDWServerEvents"/>
       </Item>
     </Files>
     <RequiredPkgs>

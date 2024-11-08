@@ -151,11 +151,11 @@
         </DelphiCompile>
         <DCCReference Include="rtl.dcp"/>
         <DCCReference Include="PascalRALDsgn.dcp"/>
-        <DCCReference Include="ralrestdwmodule.pas"/>
-        <DCCReference Include="ralrestdwparams.pas"/>
-        <DCCReference Include="ralrestdwparamsmethods.pas"/>
-        <DCCReference Include="ralrestdwserverevents.pas"/>
-        <DCCReference Include="RALDWModuleReg.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWModule.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWParams.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWParamsMethods.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWReg.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWServerEvents.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
@@ -193,7 +193,7 @@
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
-                <DeployFile LocalName="..\..\..\..\..\Public\Documents\Embarcadero\Studio\23.0\Bpl\RALDWModule.bpl" Configuration="Debug" Class="ProjectOutput">
+                <DeployFile LocalName="C:\Users\Public\Documents\Embarcadero\Studio\20.0\Bpl\RALDWModule.bpl" Configuration="Debug" Class="ProjectOutput">
                     <Platform Name="Win32">
                         <RemoteName>RALDWModule.bpl</RemoteName>
                         <Overwrite>true</Overwrite>

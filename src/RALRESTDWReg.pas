@@ -1,10 +1,10 @@
-unit RALDWModuleReg;
+unit RALRESTDWReg;
 
 interface
 
 uses
   Classes,
-  ralrestdwmodule, ralrestdwserverevents;
+  RALRESTDWModule, RALRESTDWServerEvents;
 
 procedure Register;
 

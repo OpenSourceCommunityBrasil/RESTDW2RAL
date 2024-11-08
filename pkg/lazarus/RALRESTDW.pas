@@ -20,5 +20,4 @@ end;
 
 initialization
   RegisterPackage('RALRESTDW', @Register);
-  
 end.
