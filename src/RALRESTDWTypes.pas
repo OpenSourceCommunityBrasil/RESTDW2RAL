@@ -3,7 +3,8 @@ unit RALRESTDWTypes;
 interface
 
 uses
-  Classes, SysUtils;
+  Classes, SysUtils,
+  RALTypes;
 
 type
   TRALRESTDWTypeObject = (toDataset, toParam, toMassive, toVariable, toObject);
@@ -30,7 +31,17 @@ type
 const
    cUndefined = 'undefined';
 
+function BooleanToString(AValue : boolean) : StringRAL;
+
 implementation
+
+function BooleanToString(AValue: boolean): StringRAL;
+begin
+  if AValue then
+    Result := 'true'
+  else
+    Result := 'false';
+end;
 
 end.
 

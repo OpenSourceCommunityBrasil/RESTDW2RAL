@@ -3,8 +3,9 @@ unit RALRESTDWParams;
 interface
 
 uses
-  Classes, SysUtils, Variants,
-  RALTypes, RALRESTDWTypes, RALRequest, RALResponse, RALParams;
+  Classes, SysUtils, Variants, TypInfo,
+  RALTypes, RALRESTDWTypes, RALRequest, RALResponse, RALParams, RALJson,
+  RALBase64;
 
 type
 
@@ -18,9 +19,13 @@ type
     FParamName: StringRAL;
     FAlias: StringRAL;
     FValue: variant;
+    FEncoded: boolean;
   protected
     procedure AssignTo(ADest: TPersistent); override;
 
+    procedure SetDataValue(AValue: variant; ADataType: TRALRESTDWObjectValue);
+
+    function GetAsBase64 : StringRAL;
     function GetAsAnsiString: ansistring;
     function GetAsBCD: currency;
     function GetAsBoolean: boolean;
@@ -55,6 +60,12 @@ type
     procedure SetAsTime(AValue: TDateTime);
     procedure SetAsWideString(AValue: wideString);
     procedure SetAsWord(AValue: word);
+    procedure SetAsBase64(AValue: StringRAL);
+  public
+    constructor Create;
+
+    function ToJSONObject: TRALJSONObject;
+    function ToJSON: StringRAL;
   published
     property TypeObject: TRALRESTDWTypeObject read FTypeObject write FTypeObject;
     property ObjectDirection: TRALRESTDWObjectDirection read FObjectDirection write FObjectDirection;
@@ -62,6 +73,7 @@ type
     property ParamName: StringRAL read FParamName write FParamName;
     property Alias: StringRAL read FAlias write FAlias;
     property Value: variant read FValue write FValue;
+    property Encoded: boolean read FEncoded write FEncoded;
 
     property AsBCD: currency read GetAsBCD write SetAsBCD;
     property AsFMTBCD: currency read GetAsFMTBCD write SetAsFMTBCD;
@@ -85,6 +97,7 @@ type
     property AsWideString: WideString read GetAsWideString write SetAsWideString;
     property AsAnsiString: ansistring read GetAsAnsiString write SetAsAnsiString;
     property AsMemo: string read GetAsString write SetAsString;
+    property AsBase64: StringRAL read GetAsBase64 write SetAsBase64;
   end;
 
   { TRALRESTDWParams }
@@ -269,7 +282,7 @@ end;
 
 procedure TRALRESTDWJSONParam.SetAsString(AValue: string);
 begin
-
+  SetDataValue(AValue, ovString);
 end;
 
 procedure TRALRESTDWJSONParam.SetAsTime(AValue: TDateTime);
@@ -287,6 +300,45 @@ begin
 
 end;
 
+procedure TRALRESTDWJSONParam.SetAsBase64(AValue: StringRAL);
+begin
+  SetAsString(TRALBase64.Decode(AValue));
+end;
+
+constructor TRALRESTDWJSONParam.Create;
+begin
+  inherited Create;
+  FObjectDirection := odINOUT;
+  FTypeObject := toParam;
+  FEncoded := False;
+  FObjectValue := ovString;
+end;
+
+function TRALRESTDWJSONParam.ToJSONObject: TRALJSONObject;
+begin
+  Result := TRALJSONObject.Create;
+  Result.Add('ObjectType', GetEnumName(TypeInfo(TRALRESTDWTypeObject), Ord(FTypeObject)));
+  Result.Add('Direction', GetEnumName(TypeInfo(TRALRESTDWObjectDirection), Ord(FObjectDirection)));
+  Result.Add('Encoded', BooleanToString(FEncoded));
+  Result.Add('ValueType', GetEnumName(TypeInfo(TRALRESTDWObjectValue), Ord(FObjectValue)));
+  if FEncoded then
+    Result.Add(FParamName, GetAsBase64)
+  else
+    Result.Add(FParamName, GetAsString);
+end;
+
+function TRALRESTDWJSONParam.ToJSON: StringRAL;
+var
+  vJson : TRALJSONObject;
+begin
+  vJson := ToJSONObject;
+  try
+    Result := vJson.ToJson;
+  finally
+    FreeAndNil(vJson);
+  end;
+end;
+
 procedure TRALRESTDWJSONParam.AssignTo(ADest: TPersistent);
 begin
   if ADest.InheritsFrom(TRALRESTDWJSONParam) then
@@ -301,6 +353,122 @@ begin
       Value := Self.Value;
     end;
   end;
+end;
+
+procedure TRALRESTDWJSONParam.SetDataValue(AValue: variant; ADataType: TRALRESTDWObjectValue);
+var
+  vMem: TMemoryStream;
+  vPointer: Pointer;
+begin
+{
+  FObjectValue := ADataType;
+  case ADataType Of
+    ovBytes,
+    ovVarBytes,
+    ovBlob,
+    ovByte,
+    ovGraphic,
+    ovParadoxOle,
+    ovDBaseOle,
+    ovTypedBinary,
+    ovOraBlob,
+    ovOraClob,
+    ovStream : begin
+      vMem := TMemoryStream.Create;
+      try
+        vPointer := VarArrayLock(AValue);
+        vMem.Write(vPointer^, VarArrayHighBound(AValue, 1));
+        VarArrayUnlock(AValue);
+        vMem.Position := 0;
+        if vMem.Size > 0 then
+          LoadFromStream(vMem);
+      finally
+        vMem.Free;
+      end;
+    end;
+    ovVariant,
+    ovUnknown : begin
+      FEncoded := True;
+      FObjectValue := ovString;
+//      SetValue(AValue, FEncoded);
+    end;
+    ovLargeInt,
+    ovLongWord,
+    ovShortInt,
+    ovSmallInt,
+    ovInteger,
+    ovWord,
+    ovBoolean,
+    ovAutoInc,
+    ovOraInterval : begin
+      FEncoded := False;
+      if FObjectValue = ovBoolean then
+      begin
+        if Boolean(AValue) then
+          SetValue('true', FEncoded)
+        else
+          SetValue('false', FEncoded);
+      end
+      else
+      begin
+        {$IFNDEF FPC}
+          {$if CompilerVersion <= 22}
+            SetValue(inttostr(Value), vEncoded);
+          {$ELSE}
+            if vObjectValue <> ovInteger then
+              SetValue(IntToStr(Int64(Value)), vEncoded)
+            else
+              SetValue(inttostr(Value), vEncoded);
+          {$IFEND}
+        {$ELSE}
+                           If vObjectValue <> ovInteger Then
+                            SetValue(IntToStr(Int64(Value)), vEncoded)
+                           Else
+                            SetValue(inttostr(Value), vEncoded);
+                          {$ENDIF}
+      end;
+    end;
+    ovSingle,
+    ovFloat,
+    ovCurrency,
+    ovBCD,
+    ovFMTBcd,
+    ovExtended : begin
+      FEncoded     := False;
+      FObjectValue := ovFloat;
+      SetValue(BuildStringFloat(FloatToStr(Value), DataMode, vFloatDecimalFormat), vEncoded);
+    end;
+    ovDate,
+    ovTime,
+    ovDateTime,
+    ovTimeStamp,
+    ovOraTimeStamp,
+    ovTimeStampOffset : begin
+      FEncoded     := False;
+      FObjectValue := ovFloat;
+      SetValue(BuildStringFloat(FloatToStr(Value), DataMode, vFloatDecimalFormat), vEncoded);
+    end;
+    ovString,
+    ovFixedChar,
+    ovWideString,
+    ovWideMemo,
+    ovFixedWideChar,
+    ovMemo,
+    ovFmtMemo,
+    ovObject : begin
+      if vObjectValue <> ovObject then
+        FObjectValue := ovString
+      else
+        FObjectValue := ovObject;
+        SetValue(AValue, vEncoded);
+    end;
+  end;
+}
+end;
+
+function TRALRESTDWJSONParam.GetAsBase64: StringRAL;
+begin
+  Result := TRALBase64.Encode(GetAsString);
 end;
 
 { TRALRESTDWParams }
