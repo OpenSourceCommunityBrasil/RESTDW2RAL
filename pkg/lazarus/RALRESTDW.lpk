@@ -34,6 +34,10 @@
         <Filename Value="..\..\src\RALRESTDWServerEvents.pas"/>
         <UnitName Value="RALRESTDWServerEvents"/>
       </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWTypes.pas"/>
+        <UnitName Value="RALRESTDWTypes"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

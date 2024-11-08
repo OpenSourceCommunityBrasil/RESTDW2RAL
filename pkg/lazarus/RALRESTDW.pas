@@ -9,7 +9,7 @@ interface
 
 uses
   RALRESTDWReg, RALRESTDWModule, RALRESTDWParams, RALRESTDWParamsMethods, 
-  RALRESTDWServerEvents, LazarusPackageIntf;
+  RALRESTDWServerEvents, RALRESTDWTypes, LazarusPackageIntf;
 
 implementation
 

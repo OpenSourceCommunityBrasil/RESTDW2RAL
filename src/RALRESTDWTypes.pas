@@ -1,7 +1,5 @@
 unit RALRESTDWTypes;
 
-{$mode ObjFPC}{$H+}
-
 interface
 
 uses
