@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="\"/>
+    <Name Value="RALDWModule"/>
+    <Type Value="RunAndDesignTime"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <PathDelim Value="\"/>
+      <SearchPaths>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)\"/>
+      </SearchPaths>
+    </CompilerOptions>
+    <Files>
+      <Item>
+        <Filename Value="RALDWModuleReg.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="RALDWModuleReg"/>
+      </Item>
+      <Item>
+        <Filename Value="ralrestdwmodule.pas"/>
+        <UnitName Value="ralrestdwmodule"/>
+      </Item>
+      <Item>
+        <Filename Value="ralrestdwparams.pas"/>
+        <UnitName Value="ralrestdwparams"/>
+      </Item>
+      <Item>
+        <Filename Value="ralrestdwparamsmethods.pas"/>
+        <UnitName Value="ralrestdwparamsmethods"/>
+      </Item>
+      <Item>
+        <Filename Value="ralrestdwserverevents.pas"/>
+        <UnitName Value="ralrestdwserverevents"/>
+      </Item>
+    </Files>
+    <RequiredPkgs>
+      <Item>
+        <PackageName Value="pascalraldsgn"/>
+      </Item>
+      <Item>
+        <PackageName Value="FCL"/>
+      </Item>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
