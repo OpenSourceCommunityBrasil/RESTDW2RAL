@@ -5,7 +5,7 @@ interface
 uses
   Classes, SysUtils,
   RALServer, RALTypes, RALRoutes, RALRequest, RALResponse,
-  RALRESTDWTypes, RALConsts, RALRESTDWEvents;
+  RALRESTDWTypes, RALConsts, RALRESTDWEvents, RALStream;
 
 type
 
@@ -14,7 +14,8 @@ type
   TRALRESTDWModule = class(TRALModuleRoutes)
   private
     FRDWRoutes : TRALRoutes;
-    FClassName: StringRAL;
+    FClassModule: StringRAL;
+    FFileExporter: StringRAL;
   protected
     procedure ReplyRoutes(ARequest: TRALRequest; AResponse: TRALResponse);
 
@@ -22,13 +23,22 @@ type
     procedure GetServerEventsList(ARequest: TRALRequest; AResponse: TRALResponse);
 
     procedure CreateRoutes;
+    procedure ImportFromStream(AStream : TStream);
   public
     constructor Create(AOwner : TComponent); override;
     destructor Destroy; override;
 
+    function GetListRoutes: TList; override;
     function CanAnswerRoute(ARequest: TRALRequest; AResponse: TRALResponse): TRALRoute; override;
+
+    function ExportToStream : TStream; overload;
+    procedure ExportToStream(AStream : TStream); overload;
+    procedure ExportToFile(AFile : TFileName = ''); overload;
+
+    procedure ImportFromFile(AFile : TFileName = ''); overload;
   published
-    property ClassName: StringRAL read FClassName write FClassName;
+    property ClassModule: StringRAL read FClassModule write FClassModule;
+    property FileExporter: StringRAL read FFileExporter write FFileExporter;
     property Routes;
   end;
 
@@ -48,7 +58,7 @@ var
   vServerEventName, vServer, vAccessTag, vAccess: StringRAL;
   vBlock: boolean;
 begin
-  vClass := TComponentClass(GetClass(FClassName));
+  vClass := TComponentClass(GetClass(FClassModule));
 
   if vClass <> nil then begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
@@ -72,6 +82,10 @@ begin
                 vEvent.ReplyEvent(ARequest, AResponse)
               else
                 AResponse.Answer(403);
+            end
+            else
+            begin
+              AResponse.Answer(403);
             end;
           end;
         end;
@@ -91,7 +105,7 @@ var
   vStream: TStream;
   vBlock: boolean;
 begin
-  vClass := TComponentClass(GetClass(FClassName));
+  vClass := TComponentClass(GetClass(FClassModule));
   AResponse.Clear;
   AResponse.StatusCode := HTTP_Forbidden;
 
@@ -130,6 +144,16 @@ begin
   end;
 end;
 
+function TRALRESTDWModule.GetListRoutes: TList;
+var
+  vInt: IntegerRAL;
+begin
+  Result := inherited GetListRoutes;
+
+  for vInt := 0 to Pred(FRDWRoutes.Count) do
+    Result.Add(FRDWRoutes.Items[vInt]);
+end;
+
 procedure TRALRESTDWModule.GetServerEventsList(ARequest: TRALRequest; AResponse: TRALResponse);
 var
   vClass: TComponentClass;
@@ -139,7 +163,7 @@ var
   vAccessTag, vAccess: StringRAL;
   vBlock: boolean;
 begin
-  vClass := TComponentClass(GetClass(FClassName));
+  vClass := TComponentClass(GetClass(FClassModule));
   AResponse.Clear;
   AResponse.StatusCode := HTTP_Forbidden;
 
@@ -192,6 +216,45 @@ begin
   vRoute.AllowedMethods := [amPOST, amOPTIONS];
 end;
 
+procedure TRALRESTDWModule.ImportFromStream(AStream: TStream);
+var
+  vWriter: TRALBinaryWriter;
+  vTotServer, vTotParam, vTotEvent, vInt1, vInt2, vInt3: IntegerRAL;
+  vObjRoute : TRALRoute;
+  vRoute, vRouteName, vDescription: StringRAL;
+  vParamRoute: TRALRouteParam;
+begin
+  Routes.Clear;
+
+  vWriter := TRALBinaryWriter.Create(AStream);
+  try
+    vTotServer := vWriter.ReadInteger;
+    for vInt1 := 1 to vTotServer do
+    begin
+      vTotEvent := vWriter.ReadInteger;
+      for vInt2 := 1 to vTotEvent do
+      begin
+        vRouteName := vWriter.ReadString;
+        vRoute := vWriter.ReadString;
+        vDescription := vWriter.ReadString;
+
+        vObjRoute := CreateRoute(vRoute, nil, vDescription);
+        vObjRoute.Name := vRouteName;
+
+        vTotParam := vWriter.ReadInteger;
+        for vInt3 := 1 to vTotParam do
+        begin
+          vParamRoute := TRALRouteParam(vObjRoute.InputParams.Add);
+          vParamRoute.ParamName := vWriter.ReadString;
+          vParamRoute.ParamType := ObjectValueToRouteParamType(TRALRESTDWObjectValue(vWriter.ReadByte));
+        end;
+      end;
+    end;
+  finally
+    FreeAndNil(vWriter);
+  end;
+end;
+
 constructor TRALRESTDWModule.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -215,5 +278,86 @@ begin
     Result := FRDWRoutes.CanAnswerRoute(ARequest);
 end;
 
-end.
+function TRALRESTDWModule.ExportToStream: TStream;
+begin
+  Result := TMemoryStream.Create;
+  ExportToStream(Result);
+end;
 
+procedure TRALRESTDWModule.ExportToStream(AStream: TStream);
+var
+  vWriter : TRALBinaryWriter;
+  vClass: TComponentClass;
+  vObj, vComp: TComponent;
+  vTotal, vInt1: IntegerRAL;
+begin
+  vWriter := TRALBinaryWriter.Create(AStream);
+  try
+    vClass := TComponentClass(GetClass(FClassModule));
+    if vClass <> nil then begin
+      vObj := vClass.Create(nil);
+      try
+        vTotal := 0;
+        vWriter.WriteInteger(vTotal);
+        for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
+          if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
+            vComp := vObj.Components[vInt1];
+            TRALRESTDWServerEvents(vComp).ExportEvents(vWriter);
+            vTotal := vTotal + 1;
+          end;
+        end;
+        AStream.Position := 0;
+        vWriter.WriteInteger(vTotal);
+        AStream.Position := 0;
+      finally
+        FreeAndNil(vObj);
+      end;
+    end;
+  finally
+    FreeAndNil(vWriter);
+  end;
+end;
+
+procedure TRALRESTDWModule.ExportToFile(AFile: TFileName);
+var
+  vStream : TRALBufFileStream;
+begin
+  if Trim(AFile) = '' then
+    AFile := FFileExporter;
+
+  if Trim(AFile) = '' then
+  begin
+    raise Exception.Create('FileName not assigned');
+    Exit;
+  end;
+
+  vStream := TRALBufFileStream.Create(AFile, fmCreate);
+  try
+    ExportToStream(vStream);
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+procedure TRALRESTDWModule.ImportFromFile(AFile: TFileName);
+var
+  vStream : TFileStream;
+begin
+  if Trim(AFile) = '' then
+    AFile := FFileExporter;
+
+  if Trim(AFile) = '' then
+  begin
+    raise Exception.Create('FileName not assigned');
+    Exit;
+  end;
+
+  vStream := TFileStream.Create(AFile, fmOpenRead);
+  try
+    ImportFromStream(vStream);
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+end.

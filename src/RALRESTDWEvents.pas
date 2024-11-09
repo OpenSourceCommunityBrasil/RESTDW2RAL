@@ -98,6 +98,9 @@ begin
     vParams.AssignRequest(ARequest);
     AResponse.ContentDispositionInline := True;
 
+    if Assigned(FOnBeforeExecute) then
+      FOnBeforeExecute(Self);
+
     try
       if Assigned(FOnReplyEvent) then
         FOnReplyEvent(vParams, vResult)

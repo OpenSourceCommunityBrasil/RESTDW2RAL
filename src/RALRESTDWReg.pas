@@ -20,7 +20,7 @@ type
     procedure GetValues(Proc: TGetStrProc); override;
   end;
 
-  { TRALDBZMemTableEditor }
+  { TRALRESTDWClientEventsMenu }
 
   TRALRESTDWClientEventsMenu = Class(TComponentEditor)
   public
@@ -29,6 +29,14 @@ type
     procedure ExecuteVerb(AIndex : Integer); override;
   end;
 
+  { TRALRESTDWModulesMenu }
+
+  TRALRESTDWModulesMenu = Class(TComponentEditor)
+  public
+    function GetVerbCount: Integer; override;
+    function GetVerb(AIndex : Integer): string; override;
+    procedure ExecuteVerb(AIndex : Integer); override;
+  end;
 
 procedure Register;
 
@@ -40,6 +48,7 @@ begin
   RegisterComponents('RAL - RDWModule', [TRALRESTDWClientEvents]);
   RegisterComponents('RAL - Modules', [TRALRESTDWModule]);
 
+  RegisterComponentEditor(TRALRESTDWModule, TRALRESTDWModulesMenu);
   RegisterComponentEditor(TRALRESTDWClientEvents, TRALRESTDWClientEventsMenu);
   RegisterPropertyEditor(TypeInfo(StringRAL), TRALRESTDWClientEvents, 'ServerEventName', TRALRESTDWServerEventsList);
 end;
@@ -104,6 +113,36 @@ begin
         finally
           FreeAndNil(vStream);
         end;
+      end;
+    end;
+  end;
+end;
+
+{ TRALRESTDWModulesMenu }
+
+function TRALRESTDWModulesMenu.GetVerbCount: Integer;
+begin
+  Result := 1;
+end;
+
+function TRALRESTDWModulesMenu.GetVerb(AIndex: Integer): string;
+begin
+  case AIndex of
+    0 : Result := 'Import Events';
+  end;
+end;
+
+procedure TRALRESTDWModulesMenu.ExecuteVerb(AIndex: Integer);
+var
+  vModule: TRALRESTDWModule;
+begin
+  case AIndex of
+    0 : begin
+      vModule := TRALRESTDWModule(GetComponent);
+      if vModule <> nil then
+      begin
+        if FileExists(vModule.FileExporter) then
+          vModule.ImportFromFile(vModule.FileExporter);
       end;
     end;
   end;

@@ -4,7 +4,7 @@ interface
 
 uses
   Classes, SysUtils,
-  RALTypes;
+  RALTypes, RALRoutes;
 
 type
   TRALRESTDWTypeObject = (toDataset, toParam, toMassive, toVariable, toObject);
@@ -32,6 +32,7 @@ const
    cUndefined = 'undefined';
 
 function BooleanToString(AValue : boolean) : StringRAL;
+function ObjectValueToRouteParamType(AValue: TRALRESTDWObjectValue) : TRALRouteParamType;
 
 implementation
 
@@ -41,6 +42,32 @@ begin
     Result := 'true'
   else
     Result := 'false';
+end;
+
+function ObjectValueToRouteParamType(AValue: TRALRESTDWObjectValue): TRALRouteParamType;
+begin
+  case AValue of
+    ovInteger,
+    ovWord,
+    ovSmallint,
+    ovLargeint,
+    ovShortint,
+    ovByte,
+    ovLongWord,
+    ovAutoInc : Result := prtInteger;
+
+    ovBoolean : Result := prtBoolean;
+
+    ovFloat,
+    ovCurrency,
+    ovBCD,
+    ovFMTBcd,
+    ovExtended,
+    ovSingle  : Result := prtNumber;
+
+    else
+      Result := prtString;
+  end;
 end;
 
 end.
