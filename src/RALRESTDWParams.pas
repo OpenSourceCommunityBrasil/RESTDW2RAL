@@ -23,6 +23,7 @@ type
   protected
     procedure AssignTo(ADest: TPersistent); override;
 
+    function GetAsStream: TStream;
     function GetAsBase64 : StringRAL;
     function GetAsAnsiString: AnsiString;
     function GetAsBCD: currency;
@@ -39,6 +40,7 @@ type
     function GetAsWideString: WideString;
     function GetAsWord: word;
     function GetByteString: string;
+    procedure SetAsStream(const AValue: TStream);
     procedure SetAsAnsiString(AValue: AnsiString);
     procedure SetAsBCD(AValue: currency);
     procedure SetAsBoolean(AValue: boolean);
@@ -79,6 +81,7 @@ type
     property ParamName: StringRAL read FParamName write FParamName;
     property Alias: StringRAL read FAlias write FAlias;
     property Encoded: boolean read FEncoded write FEncoded;
+    property Value: TStream read FValue;
 
     property AsBCD: currency read GetAsBCD write SetAsBCD;
     property AsFMTBCD: currency read GetAsFMTBCD write SetAsFMTBCD;
@@ -103,6 +106,7 @@ type
     property AsAnsiString: ansistring read GetAsAnsiString write SetAsAnsiString;
     property AsMemo: string read GetAsString write SetAsString;
     property AsBase64: StringRAL read GetAsBase64 write SetAsBase64;
+    property AsStream: TStream read GetAsStream write SetAsStream;
   end;
 
   { TRALRESTDWParams }
@@ -194,6 +198,11 @@ end;
 function TRALRESTDWJSONParam.GetAsSingle: single;
 begin
   Result := StrToFloatDef(StreamToString(FValue), 0);
+end;
+
+function TRALRESTDWJSONParam.GetAsStream: TStream;
+begin
+  Result := SaveToStream;
 end;
 
 function TRALRESTDWJSONParam.GetAsString: string;
@@ -391,6 +400,11 @@ begin
   FValue := StringToStreamUTF8(IntToStr(AValue));
 end;
 
+procedure TRALRESTDWJSONParam.SetAsStream(const AValue: TStream);
+begin
+  LoadFromStream(AValue);
+end;
+
 procedure TRALRESTDWJSONParam.SetAsString(AValue: string);
 begin
   FObjectValue := ovString;
@@ -487,13 +501,7 @@ begin
       ObjectValue := Self.ObjectValue;
       ParamName := Self.ParamName;
       Alias := Self.Alias;
-
-      vStream := Self.SaveToStream;
-      try
-        LoadFromStream(vStream);
-      finally
-        vStream.Free;
-      end;
+      AsStream := Self.Value;
     end;
   end;
 end;
@@ -592,7 +600,6 @@ var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
   vRALParam: TRALParam;
-  vStream: TStream;
 begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
@@ -601,21 +608,7 @@ begin
     begin
       vRALParam := ARequest.ParamByName(vParam.ParamName);
       if vRALParam <> nil then
-      begin
-        if not (vParam.ObjectValue in [ovBytes, ovStream, ovBlob, ovVarBytes,
-                                       ovGraphic, ovOraBlob]) then
-        begin
-          vParam.AsString := vRALParam.AsString;
-        end
-        else begin
-          vStream := vRALParam.SaveToStream;
-          try
-            vParam.LoadFromStream(vStream);
-          finally
-            FreeAndNil(vStream);
-          end;
-        end;
-      end;
+        vParam.AsStream := vRALParam.Content;
     end;
   end;
 end;
@@ -624,28 +617,12 @@ procedure TRALRESTDWParams.AssignResponse(AResponse: TRALResponse);
 var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
-  vStream: TStream;
 begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
     if (vParam.ObjectDirection in [odOUT, odINOUT]) then
-    begin
-      vParam.AsString := AResponse.ParamByName(vParam.ParamName).AsString;
-      if not (vParam.ObjectValue in [ovBytes, ovStream, ovBlob, ovVarBytes,
-                                     ovGraphic, ovOraBlob]) then
-      begin
-        vParam.AsString := AResponse.ParamByName(vParam.ParamName).AsString;
-      end
-      else begin
-        vStream := AResponse.ParamByName(vParam.ParamName).SaveToStream;
-        try
-          vParam.LoadFromStream(vStream);
-        finally
-          FreeAndNil(vStream);
-        end;
-      end;
-    end;
+      vParam.AsStream := AResponse.ParamByName(vParam.ParamName).Content
   end;
 end;
 
@@ -654,7 +631,6 @@ var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
   vRALParam : TRALParam;
-  vStream: TStream;
 begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
@@ -662,26 +638,13 @@ begin
     if (vParam.ObjectDirection in [odIN, odINOUT]) then
     begin
       vRALParam := ARequest.ParamByName(vParam.ParamName);
-      if vRALParam <> nil then
+      if vRALParam = nil then
       begin
         vRALParam := ARequest.Params.NewParam;
         vRALParam.ParamName := vParam.ParamName;
       end;
-      vRALParam.AsString := vParam.AsString;
-
-      if not (vParam.ObjectValue in [ovBytes, ovStream, ovBlob, ovVarBytes,
-                                     ovGraphic, ovOraBlob]) then
-      begin
-        vRALParam.AsString := vParam.AsString;
-      end
-      else begin
-        vStream := vParam.SaveToStream;
-        try
-          vRALParam.AsStream := vStream;
-        finally
-          FreeAndNil(vStream);
-        end;
-      end;
+      vRALParam.AsStream := vParam.Value;
+      vRALParam.Kind := rpkBODY;
     end;
   end;
 end;
@@ -690,27 +653,12 @@ procedure TRALRESTDWParams.AppendResponse(AResponse: TRALResponse);
 var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
-  vStream: TStream;
 begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
     if (vParam.ObjectDirection in [odOUT, odINOUT]) then
-    begin
-      if not (vParam.ObjectValue in [ovBytes, ovStream, ovBlob, ovVarBytes,
-                                     ovGraphic, ovOraBlob]) then
-      begin
-        AResponse.Params.AddParam(vParam.ParamName, vParam.AsString, rpkBODY);
-      end
-      else begin
-        vStream := vParam.SaveToStream;
-        try
-          AResponse.Params.AddParam(vParam.ParamName, vStream, rpkBODY);
-        finally
-          FreeAndNil(vStream);
-        end;
-      end;
-    end;
+      AResponse.Params.AddParam(vParam.ParamName, vParam.Value, rpkBODY);
   end;
 end;
 

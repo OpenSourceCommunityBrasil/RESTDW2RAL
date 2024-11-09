@@ -5,7 +5,7 @@ interface
 uses
   Classes, SysUtils,
   RALServer, RALTypes, RALRoutes, RALRequest, RALResponse,
-  RALRESTDWTypes, RALConsts, RALRESTDWEvents, RALStream;
+  RALRESTDWTypes, RALConsts, RALRESTDWEvents, RALStream, RALMIMETypes;
 
 type
 
@@ -59,6 +59,7 @@ var
   vBlock: boolean;
 begin
   vClass := TComponentClass(GetClass(FClassModule));
+  AResponse.Answer(403);
 
   if vClass <> nil then begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
@@ -80,12 +81,6 @@ begin
               vEvent := TRALRESTDWServerEvents(vComp).CanAnswerEvent(ARequest);
               if vEvent <> nil then
                 vEvent.ReplyEvent(ARequest, AResponse)
-              else
-                AResponse.Answer(403);
-            end
-            else
-            begin
-              AResponse.Answer(403);
             end;
           end;
         end;
@@ -106,8 +101,7 @@ var
   vBlock: boolean;
 begin
   vClass := TComponentClass(GetClass(FClassModule));
-  AResponse.Clear;
-  AResponse.StatusCode := HTTP_Forbidden;
+  AResponse.Answer(403);
 
   if vClass <> nil then begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
@@ -127,10 +121,10 @@ begin
 
             if not vBlock then
             begin
-              AResponse.StatusCode := HTTP_OK;
+              AResponse.Clear;
               vStream := TRALRESTDWServerEvents(vComp).GetEvents;
               try
-                AResponse.ResponseStream := vStream;
+                AResponse.Answer(HTTP_OK, vStream, rctAPPLICATIONOCTETSTREAM);
               finally
                 FreeAndNil(vStream);
               end;
@@ -164,8 +158,7 @@ var
   vBlock: boolean;
 begin
   vClass := TComponentClass(GetClass(FClassModule));
-  AResponse.Clear;
-  AResponse.StatusCode := HTTP_Forbidden;
+  AResponse.Answer(403);
 
   if vClass <> nil then begin
     vAccessTag := ARequest.ParamByName('accesstag').AsString;
@@ -190,7 +183,7 @@ begin
       end;
 
       AResponse.Clear;
-      AResponse.Answer(200, vResult);
+      AResponse.Answer(200, vResult, rctTEXTPLAIN);
     finally
       FreeAndNil(vObj);
     end;

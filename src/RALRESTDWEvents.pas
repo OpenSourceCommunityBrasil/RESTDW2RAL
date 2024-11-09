@@ -24,6 +24,7 @@ type
     FDescription: TStrings;
     FEventName: StringRAL;
     FParams: TRALRESTDWParamsMethods;
+    FOnlyPreDefinedParams: boolean;
 
     FOnReplyEvent: TRALRESTDWReplyEvent;
     FOnReplyEventByType: TRALRESTDWReplyEventByType;
@@ -49,6 +50,7 @@ type
     property Description: TStrings read FDescription write SetDescription;
     property EventName: StringRAL read FEventName write FEventName;
     property Params: TRALRESTDWParamsMethods read FParams write SetParams;
+    property OnlyPreDefinedParams: Boolean read FOnlyPreDefinedParams write FOnlyPreDefinedParams;
 
     property OnReplyEvent: TRALRESTDWReplyEvent read FOnReplyEvent write FOnReplyEvent;
     property OnReplyEventByType: TRALRESTDWReplyEventByType read FOnReplyEventByType write FOnReplyEventByType;
