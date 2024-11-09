@@ -2,18 +2,31 @@ unit RALRESTDWEvents;
 
 interface
 
+{$I RALRESTDW.inc}
+
 uses
   Classes, SysUtils,
   RALTypes, RALRESTDWParams, RALRESTDWParamsMethods, RALRequest, RALResponse,
   RALConsts, RALTools, RALRESTDWTypes, RALMimeTypes;
 
 type
-  TRALRESTDWReplyEvent = procedure(AParams: TRALRESTDWParams; const AResult: TStringList) of object;
+  {$IFDEF RDW143}
+  TRALRESTDWReplyEvent = procedure(AParams: TRALRESTDWParams;
+                                   var AResult: StringRAL) of object;
+  TRALRESTDWReplyEventByType = procedure(var AParams: TRALRESTDWParams;
+                                         var AResult: StringRAL;
+                                         const ARequestType: TRALMethod;
+                                         var AStatusCode: IntegerRAL;
+                                         ARequestHeader: TStringList) of object;
+  {$ELSE}
+  TRALRESTDWReplyEvent = procedure(AParams: TRALRESTDWParams;
+                                   const AResult: TStringList) of object;
   TRALRESTDWReplyEventByType = procedure(var AParams: TRALRESTDWParams;
                                          const AResult: TStringList;
                                          const ARequestType: TRALMethod;
                                          var AStatusCode: IntegerRAL;
                                          ARequestHeader: TStringList) of object;
+  {$ENDIF}
 
   { TRALRESTDWEvent }
 
@@ -85,15 +98,24 @@ end;
 procedure TRALRESTDWEvent.ReplyEvent(ARequest: TRALRequest; AResponse: TRALResponse);
 var
   vParams: TRALRESTDWParams;
-  vResult: TStringList;
+  {$IFDEF RDW143}
+    vResult: StringRAL;
+  {$ELSE}
+    vResult: TStringList;
+  {$ENDIF}
   vHeader: TStringList;
   vStatusCode: IntegerRAL;
 begin
-  vResult := TStringList.Create;
+  {$IFDEF RDW143}
+    vResult := '';
+  {$ELSE}
+    vResult := TStringList.Create;
+  {$ENDIF}
   vHeader := TStringList.Create;
   vParams := TRALRESTDWParams.Create;
   try
     vStatusCode := HTTP_OK;
+
     AResponse.Clear;
     AResponse.ContentType := FDefaultContentType;
     FParams.CreateParams(vParams);
@@ -110,8 +132,15 @@ begin
         FOnReplyEventByType(vParams, vResult, ARequest.Method, vStatusCode, vHeader);
 
       AResponse.StatusCode := vStatusCode;
-      if Trim(vResult.Text) <> '' then
-        AResponse.Params.AddParam(cUndefined, vResult.Text, rpkBODY);
+
+      {$IFDEF RDW143}
+        if Trim(vResult) <> '' then
+          AResponse.Params.AddParam(cUndefined, vResult, rpkBODY);
+      {$ELSE}
+        if Trim(vResult.Text) <> '' then
+          AResponse.Params.AddParam(cUndefined, vResult.Text, rpkBODY);
+      {$ENDIF}
+
       AResponse.Params.AppendParams(vHeader, rpkHEADER);
       vParams.AppendResponse(AResponse);
     except
@@ -122,7 +151,9 @@ begin
       end;
     end;
   finally
-    FreeAndNil(vResult);
+    {$IFNDEF RDW143}
+      FreeAndNil(vResult);
+    {$ENDIF}
     FreeAndNil(vHeader);
     FreeAndNil(vParams);
   end;
