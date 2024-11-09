@@ -25,6 +25,8 @@ type
     procedure AssignTo(ADest: TPersistent); override;
   public
     constructor Create(ACollection: TCollection); override;
+
+    function GetNamePath: string; override;
   published
     property TypeObject: TRALRESTDWTypeObject read FTypeObject write FTypeObject;
     property ObjectDirection: TRALRESTDWObjectDirection read FObjectDirection write FObjectDirection;
@@ -103,6 +105,18 @@ begin
   inherited;
 end;
 
+function TRALRESTDWParamMethod.GetNamePath: string;
+var
+  vName: StringRAL;
+begin
+  Result := '';
+  if Self = nil then
+    Exit;
+
+  vName := Collection.GetNamePath;
+  Result := vName + '_' + FParamName;
+end;
+
 procedure TRALRESTDWParamMethod.SetDisplayName(const AValue: string);
 begin
   if Trim(AValue) <> '' then
@@ -121,7 +135,7 @@ begin
       ObjectValue := Self.ObjectValue;
       ParamName := Self.ParamName;
       Alias := Self.Alias;
-      Value := Self.DefaultValue;
+      AsString := Self.DefaultValue;
     end;
   end
   else if ADest.InheritsFrom(TRALRESTDWParamMethod) then

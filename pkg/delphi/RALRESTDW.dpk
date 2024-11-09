@@ -37,6 +37,8 @@ contains
   RALRESTDWParamsMethods in '..\..\src\RALRESTDWParamsMethods.pas',
   RALRESTDWReg in '..\..\src\RALRESTDWReg.pas',
   RALRESTDWServerEvents in '..\..\src\RALRESTDWServerEvents.pas',
-  RALRESTDWTypes in '..\..\src\RALRESTDWTypes.pas';
+  RALRESTDWTypes in '..\..\src\RALRESTDWTypes.pas',
+  RALRESTDWClientEvents in '..\..\src\RALRESTDWClientEvents.pas',
+  RALRESTDWEvents in '..\..\src\RALRESTDWEvents.pas';
 
 end.

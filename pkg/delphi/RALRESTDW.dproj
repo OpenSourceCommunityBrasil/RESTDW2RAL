@@ -157,6 +157,8 @@
         <DCCReference Include="..\..\src\RALRESTDWReg.pas"/>
         <DCCReference Include="..\..\src\RALRESTDWServerEvents.pas"/>
         <DCCReference Include="..\..\src\RALRESTDWTypes.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWClientEvents.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWEvents.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
@@ -178,10 +180,7 @@
                     <Source Name="MainSource">RALRESTDW.dpk</Source>
                 </Source>
                 <Excluded_Packages>
-                    <Excluded_Packages Name="C:\Users\Public\Documents\Embarcadero\Studio\20.0\Bpl\AbbreviaFMXDDesign260.bpl">TurboPack Abbrevia FMX Designtime Delphi package</Excluded_Packages>
                     <Excluded_Packages Name="D:\desenvolvimento\componentes_xe\pascalscript\Dcu\D25\win32\PascalScript_Core_D25.bpl">RemObjects Pascal Script - Core Package</Excluded_Packages>
-                    <Excluded_Packages Name="$(BDSBIN)\dcloffice2k260.bpl">Microsoft Office 2000 Sample Automation Server Wrapper Components</Excluded_Packages>
-                    <Excluded_Packages Name="$(BDSBIN)\dclofficexp260.bpl">Microsoft Office XP Sample Automation Server Wrapper Components</Excluded_Packages>
                 </Excluded_Packages>
             </Delphi.Personality>
             <Deployment Version="3">

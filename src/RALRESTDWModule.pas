@@ -5,7 +5,7 @@ interface
 uses
   Classes, SysUtils,
   RALServer, RALTypes, RALRoutes, RALRequest, RALResponse,
-  RALRESTDWTypes, RALJSON;
+  RALRESTDWTypes, RALConsts, RALRESTDWEvents;
 
 type
 
@@ -56,7 +56,9 @@ begin
           vComp := vObj.Components[vInt1];
           vEvent := TRALRESTDWServerEvents(vComp).CanAnswerEvent(ARequest);
           if vEvent <> nil then
-            vEvent.ReplyEvent(ARequest, AResponse);
+            vEvent.ReplyEvent(ARequest, AResponse)
+          else
+            AResponse.Answer(403);
         end;
       end;
     finally
@@ -71,19 +73,31 @@ var
   vClass: TComponentClass;
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
+  vStream: TStream;
 begin
   vClass := TComponentClass(GetClass(FClassName));
 
   if vClass <> nil then begin
-    vServerEventName := ARequest.ParamByName('dwservereventname').AsString;
+    vServerEventName := ARequest.ParamByName('servereventname').AsString;
     vObj := vClass.Create(nil);
+
+    AResponse.Clear;
+    AResponse.StatusCode := HTTP_Forbidden;
+
     try
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
           vComp := vObj.Components[vInt1];
-//          if SameText(vComp.Name, vServerEventName) then
-//            TRALRESTDWServerEvents(vComp).GetEvents
+          if SameText(vComp.Name, vServerEventName) then
+          begin
+            AResponse.StatusCode := HTTP_OK;
+            vStream := TRALRESTDWServerEvents(vComp).GetEvents;
+            try
+              AResponse.ResponseStream := vStream;
+            finally
+              FreeAndNil(vStream);
+            end;
+          end;
         end;
       end;
     finally
@@ -97,11 +111,7 @@ var
   vClass: TComponentClass;
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
   vResult: StringRAL;
-  vJSONParam: TRALRESTDWJSONParam;
-  vJSON, vJSONObj: TRALJSONObject;
-  vJSONArr: TRALJSONArray;
 begin
   vClass := TComponentClass(GetClass(FClassName));
 
@@ -118,33 +128,8 @@ begin
         end;
       end;
 
-      vJSON := TRALJSONObject.Create;
-      try
-        vJSONArr := TRALJSONArray.Create;
-        vJSONParam := TRALRESTDWJSONParam.Create;
-        try
-          vJSONParam.Value := vResult;
-          vJSONParam.ObjectDirection := odOUT;
-          vJSONParam.TypeObject := toParam;
-          vJSONParam.Encoded := True;
-          vJSONParam.ObjectValue := ovString;
-
-          vJSONArr.Add(vJSONParam.ToJSONObject);
-          vJSON.Add('PARAMS', vJSONArr)
-        finally
-          FreeAndNil(vJSONParam);
-        end;
-
-        vJSONArr := TRALJSONArray.Create;
-        vJSONObj := TRALJSONObject.Create;
-        vJSONObj.Add('MESSAGE', 'OK');
-        vJSONObj.Add('RESULT', 'OK');
-        vJSONArr.Add(vJSONObj);
-
-        vJSON.Add('RESULT', vJSONArr)
-      finally
-        FreeAndNil(vJSON);
-      end;
+      AResponse.Clear;
+      AResponse.Answer(200, vResult);
     finally
       FreeAndNil(vObj);
     end;
@@ -157,11 +142,17 @@ var
 begin
   FRDWRoutes.Clear;
 
-  vRoute := CreateRoute('/getevents', {$IFDEF FPC}@{$ENDIF}GetEvents);
-  vRoute.AllowedMethods := [amGET];
+  vRoute := TRALRoute(FRDWRoutes.Add);
+  vRoute.Name := 'getevents';
+  vRoute.Route := '/getevents';
+  vRoute.OnReply := {$IFDEF FPC}@{$ENDIF}GetEvents;
+  vRoute.AllowedMethods := [amGET, amOPTIONS];
 
-  vRoute := CreateRoute('/getservereventslist', {$IFDEF FPC}@{$ENDIF}GetServerEventsList);
-  vRoute.AllowedMethods := [amGET];
+  vRoute := TRALRoute(FRDWRoutes.Add);
+  vRoute.Name := 'getservereventslist';
+  vRoute.Route := '/getservereventslist';
+  vRoute.OnReply := {$IFDEF FPC}@{$ENDIF}GetServerEventsList;
+  vRoute.AllowedMethods := [amGET, amOPTIONS];
 end;
 
 constructor TRALRESTDWModule.Create(AOwner: TComponent);

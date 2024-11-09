@@ -38,6 +38,14 @@
         <Filename Value="..\..\src\RALRESTDWTypes.pas"/>
         <UnitName Value="RALRESTDWTypes"/>
       </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWClientEvents.pas"/>
+        <UnitName Value="RALRESTDWClientEvents"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWEvents.pas"/>
+        <UnitName Value="RALRESTDWEvents"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
