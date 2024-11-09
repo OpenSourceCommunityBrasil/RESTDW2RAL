@@ -95,7 +95,7 @@ var
 begin
   case AIndex of
     0 : begin
-      vClient := TRALRESTDWClientEvents(GetComponent{$IFNDEF FPC}(0){$ENDIF});
+      vClient := TRALRESTDWClientEvents(GetComponent);
       if vClient <> nil then
       begin
         vStream := vClient.GetEvents;

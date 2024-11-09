@@ -45,20 +45,35 @@ var
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
   vEvent: TRALRESTDWEvent;
+  vServerEventName, vServer, vAccessTag, vAccess: StringRAL;
+  vBlock: boolean;
 begin
   vClass := TComponentClass(GetClass(FClassName));
 
   if vClass <> nil then begin
+    vServerEventName := ARequest.ParamByName('servereventname').AsString;
+    vAccessTag := ARequest.ParamByName('accesstag').AsString;
+
     vObj := vClass.Create(nil);
     try
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
           vComp := vObj.Components[vInt1];
-          vEvent := TRALRESTDWServerEvents(vComp).CanAnswerEvent(ARequest);
-          if vEvent <> nil then
-            vEvent.ReplyEvent(ARequest, AResponse)
-          else
-            AResponse.Answer(403);
+          vServer := Format('%s.%s', [vClass.ClassName, vComp.Name]);
+          vAccess := TRALRESTDWServerEvents(vComp).AccessTag;
+          if SameText(vServer, vServerEventName) then
+          begin
+            vBlock := ((vAccess <> '') and (vAccess <> vAccessTag)) or
+                      ((vAccessTag <> '') and (vAccess <> vAccessTag));
+
+            if not vBlock then begin
+              vEvent := TRALRESTDWServerEvents(vComp).CanAnswerEvent(ARequest);
+              if vEvent <> nil then
+                vEvent.ReplyEvent(ARequest, AResponse)
+              else
+                AResponse.Answer(403);
+            end;
+          end;
         end;
       end;
     finally
@@ -69,11 +84,12 @@ end;
 
 procedure TRALRESTDWModule.GetEvents(ARequest: TRALRequest; AResponse: TRALResponse);
 var
-  vServerEventName, vServer: StringRAL;
+  vServerEventName, vServer, vAccessTag, vAccess: StringRAL;
   vClass: TComponentClass;
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
   vStream: TStream;
+  vBlock: boolean;
 begin
   vClass := TComponentClass(GetClass(FClassName));
   AResponse.Clear;
@@ -81,6 +97,7 @@ begin
 
   if vClass <> nil then begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
+    vAccessTag := ARequest.ParamByName('accesstag').AsString;
     vObj := vClass.Create(nil);
 
     try
@@ -88,14 +105,21 @@ begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
           vComp := vObj.Components[vInt1];
           vServer := Format('%s.%s', [vClass.ClassName, vComp.Name]);
+          vAccess := TRALRESTDWServerEvents(vComp).AccessTag;
           if SameText(vServer, vServerEventName) then
           begin
-            AResponse.StatusCode := HTTP_OK;
-            vStream := TRALRESTDWServerEvents(vComp).GetEvents;
-            try
-              AResponse.ResponseStream := vStream;
-            finally
-              FreeAndNil(vStream);
+            vBlock := ((vAccess <> '') and (vAccess <> vAccessTag)) or
+                      ((vAccessTag <> '') and (vAccess <> vAccessTag));
+
+            if not vBlock then
+            begin
+              AResponse.StatusCode := HTTP_OK;
+              vStream := TRALRESTDWServerEvents(vComp).GetEvents;
+              try
+                AResponse.ResponseStream := vStream;
+              finally
+                FreeAndNil(vStream);
+              end;
             end;
           end;
         end;
@@ -112,21 +136,32 @@ var
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
   vResult: StringRAL;
+  vAccessTag, vAccess: StringRAL;
+  vBlock: boolean;
 begin
   vClass := TComponentClass(GetClass(FClassName));
   AResponse.Clear;
   AResponse.StatusCode := HTTP_Forbidden;
 
   if vClass <> nil then begin
+    vAccessTag := ARequest.ParamByName('accesstag').AsString;
+
     vObj := vClass.Create(nil);
     try
       vResult := '';
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
           vComp := vObj.Components[vInt1];
-          if vResult <> '' then
-            vResult := vResult + '|';
-          vResult := vResult + Format('%s.%s', [vClass.ClassName, vComp.Name]);
+          vAccess := TRALRESTDWServerEvents(vComp).AccessTag;
+
+          vBlock := ((vAccess <> '') and (vAccess <> vAccessTag)) or
+                    ((vAccessTag <> '') and (vAccess <> vAccessTag));
+          if not vBlock then
+          begin
+            if vResult <> '' then
+              vResult := vResult + '|';
+            vResult := vResult + Format('%s.%s', [vClass.ClassName, vComp.Name]);
+          end;
         end;
       end;
 
@@ -146,15 +181,15 @@ begin
 
   vRoute := TRALRoute(FRDWRoutes.Add);
   vRoute.Name := 'getevents';
-  vRoute.Route := '/getevents';
+  vRoute.Route := Domain + '/getevents';
   vRoute.OnReply := {$IFDEF FPC}@{$ENDIF}GetEvents;
-  vRoute.AllowedMethods := [amGET, amOPTIONS];
+  vRoute.AllowedMethods := [amPOST, amOPTIONS];
 
   vRoute := TRALRoute(FRDWRoutes.Add);
   vRoute.Name := 'getservereventslist';
-  vRoute.Route := '/getservereventslist';
+  vRoute.Route := Domain + '/getservereventslist';
   vRoute.OnReply := {$IFDEF FPC}@{$ENDIF}GetServerEventsList;
-  vRoute.AllowedMethods := [amGET, amOPTIONS];
+  vRoute.AllowedMethods := [amPOST, amOPTIONS];
 end;
 
 constructor TRALRESTDWModule.Create(AOwner: TComponent);
