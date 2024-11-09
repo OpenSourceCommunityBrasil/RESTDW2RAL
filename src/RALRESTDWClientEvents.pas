@@ -5,17 +5,22 @@ interface
 uses
   Classes, SysUtils,
   RALCustomObjects, RALTypes, RALRESTDWEvents, RALStream, RALParams,
-  RALRESTDWParamsMethods, RALRESTDWTypes, RALClient, RALRESTDWParams;
+  RALRESTDWParamsMethods, RALRESTDWTypes, RALClient, RALRESTDWParams,
+  RALTools;
 
 type
   TRALRESTDWSendEvent = (seGET, sePOST, sePUT, seDELETE, sePATCH);
+
+  { TRALRESTDWClientEvents }
 
   TRALRESTDWClientEvents = class(TRALComponent)
   private
     FAccessTag: StringRAL;
     FEvents: TRALRESTDWEventList;
+    FModuleRoute: StringRAL;
     FServerEventName: StringRAL;
     FRALClient : TRALClient;
+    procedure SetModuleRoute(AValue: StringRAL);
   protected
     procedure SetRALClient(const AValue: TRALClient);
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
@@ -32,11 +37,14 @@ type
                        AEventType: TRALRESTDWSendEvent = sePOST;
                        AsSyncExec: Boolean = False): Boolean; overload;
 
-    procedure SetEvents(AStream: TStream);
     procedure ClearEvents;
+    procedure SetEvents(AStream: TStream);
+    function GetServerEvents: StringRAL;
+    function GetEvents: TStream;
   published
     property AccessTag : StringRAL read FAccessTag write FAccessTag;
     property Events : TRALRESTDWEventList read FEvents write FEvents;
+    property ModuleRoute: StringRAL read FModuleRoute write SetModuleRoute;
     property RALClient: TRALClient read FRALClient write SetRALClient;
     property ServerEventName: StringRAL read FServerEventName write FServerEventName;
   end;
@@ -54,6 +62,7 @@ constructor TRALRESTDWClientEvents.Create(AOwner: TComponent);
 begin
   inherited;
   FEvents := TRALRESTDWEventList.Create(Self);
+  FModuleRoute := '/';
 end;
 
 procedure TRALRESTDWClientEvents.CreateDWParams(AEventName: StringRAL; var AParams: TRALRESTDWParams);
@@ -109,8 +118,9 @@ begin
 end;
 
 function TRALRESTDWClientEvents.SendEvent(AEventName: StringRAL;
-  AParams: TRALRESTDWParams; var AError, ANativeResult: StringRAL;
-  AEventType: TRALRESTDWSendEvent; AsSyncExec: Boolean): Boolean;
+  AParams: TRALRESTDWParams; var AError: StringRAL;
+  var ANativeResult: StringRAL; AEventType: TRALRESTDWSendEvent;
+  AsSyncExec: Boolean): Boolean;
 var
   vEvent: TRALRESTDWEvent;
   vParam: TRALParam;
@@ -124,7 +134,7 @@ begin
     FRALClient.Request.Clear;
     if FAccessTag <> '' then
       FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
-    FRALClient.Request.Params.AddParam('servereventname', FServerEventName);
+    FRALClient.Request.Params.AddParam('servereventname', FServerEventName, rpkBODY);
 
     AParams.AppendRequest(FRALClient.Request);
 
@@ -171,6 +181,8 @@ var
   vParam: TRALRESTDWParamMethod;
 begin
   ClearEvents;
+  if AStream = nil then
+    Exit;
 
   vWriter := TRALBinaryWriter.Create(AStream);
   try
@@ -200,6 +212,76 @@ begin
   finally
     FreeAndNil(vWriter);
   end;
+end;
+
+function TRALRESTDWClientEvents.GetServerEvents : StringRAL;
+var
+  vParam: TRALParam;
+begin
+  Result := '';
+
+  if FRALClient = nil then
+  begin
+    raise Exception.Create('Property RALClient not assigned');
+    Exit;
+  end;
+
+  FRALClient.Request.Clear;
+  if FAccessTag <> '' then
+    FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
+
+  FRALClient.Route := FixRoute(FModuleRoute + '/getservereventslist');
+  try
+    FRALClient.Post;
+    vParam := FRALClient.Response.Body;
+    if vParam <> nil then
+      Result := vParam.AsString;
+  except
+    on e : Exception do
+    begin
+      raise Exception.CreateFmt('Erro ao recuperar os ServerEvents: %s', [e.Message]);
+    end;
+  end;
+end;
+
+function TRALRESTDWClientEvents.GetEvents: TStream;
+var
+  vParam: TRALParam;
+begin
+  Result := nil;
+
+  if FRALClient = nil then
+  begin
+    raise Exception.Create('Property RALClient not assigned');
+    Exit;
+  end;
+
+  FRALClient.Request.Clear;
+  FRALClient.Request.ContentType := 'text/plain';
+  if FAccessTag <> '' then
+    FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
+  FRALClient.Request.Params.AddParam('servereventname', FServerEventName, rpkBODY);
+
+  FRALClient.Route := FixRoute(FModuleRoute + '/getevents');
+  try
+    FRALClient.Post;
+    vParam := FRALClient.Response.Body;
+    if vParam <> nil then
+      Result := vParam.SaveToStream;
+  except
+    on e : Exception do
+    begin
+      raise Exception.CreateFmt('Erro ao recuperar os Events: %s', [e.Message]);
+    end;
+  end;
+end;
+
+procedure TRALRESTDWClientEvents.SetModuleRoute(AValue: StringRAL);
+begin
+  if FModuleRoute = AValue then
+    Exit;
+
+  FModuleRoute := FixRoute(AValue);
 end;
 
 procedure TRALRESTDWClientEvents.SetRALClient(const AValue: TRALClient);

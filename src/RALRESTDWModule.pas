@@ -69,26 +69,26 @@ end;
 
 procedure TRALRESTDWModule.GetEvents(ARequest: TRALRequest; AResponse: TRALResponse);
 var
-  vServerEventName: StringRAL;
+  vServerEventName, vServer: StringRAL;
   vClass: TComponentClass;
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
   vStream: TStream;
 begin
   vClass := TComponentClass(GetClass(FClassName));
+  AResponse.Clear;
+  AResponse.StatusCode := HTTP_Forbidden;
 
   if vClass <> nil then begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
     vObj := vClass.Create(nil);
 
-    AResponse.Clear;
-    AResponse.StatusCode := HTTP_Forbidden;
-
     try
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
           vComp := vObj.Components[vInt1];
-          if SameText(vComp.Name, vServerEventName) then
+          vServer := Format('%s.%s', [vClass.ClassName, vComp.Name]);
+          if SameText(vServer, vServerEventName) then
           begin
             AResponse.StatusCode := HTTP_OK;
             vStream := TRALRESTDWServerEvents(vComp).GetEvents;
@@ -114,6 +114,8 @@ var
   vResult: StringRAL;
 begin
   vClass := TComponentClass(GetClass(FClassName));
+  AResponse.Clear;
+  AResponse.StatusCode := HTTP_Forbidden;
 
   if vClass <> nil then begin
     vObj := vClass.Create(nil);
