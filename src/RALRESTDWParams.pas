@@ -114,6 +114,7 @@ type
   TRALRESTDWParams = class
   private
     FParams: TList;
+    FRequest: TRALRequest;
   protected
     procedure ClearParams;
 
@@ -136,6 +137,8 @@ type
 
     property Items[AIndex: IntegerRAL]: TRALRESTDWJSONParam read GetParamIndex write SetParamIndex;
     property ItemsString[AName: StringRAL]: TRALRESTDWJSONParam read GetParamName write SetParamName;
+  published
+    property Request : TRALRequest read FRequest write FRequest;
   end;
 
 implementation
@@ -575,6 +578,7 @@ constructor TRALRESTDWParams.Create;
 begin
   inherited;
   FParams := TList.Create;
+  FRequest := nil;
 end;
 
 destructor TRALRESTDWParams.Destroy;
@@ -601,6 +605,7 @@ var
   vParam: TRALRESTDWJSONParam;
   vRALParam: TRALParam;
 begin
+  FRequest := ARequest;
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);

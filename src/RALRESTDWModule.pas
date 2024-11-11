@@ -65,7 +65,7 @@ begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
     vAccessTag := ARequest.ParamByName('accesstag').AsString;
 
-    vObj := vClass.Create(nil);
+    vObj := vClass.Create(Self);
     try
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
@@ -106,8 +106,8 @@ begin
   if vClass <> nil then begin
     vServerEventName := ARequest.ParamByName('servereventname').AsString;
     vAccessTag := ARequest.ParamByName('accesstag').AsString;
-    vObj := vClass.Create(nil);
 
+    vObj := vClass.Create(Self);
     try
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
         if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
@@ -163,7 +163,7 @@ begin
   if vClass <> nil then begin
     vAccessTag := ARequest.ParamByName('accesstag').AsString;
 
-    vObj := vClass.Create(nil);
+    vObj := vClass.Create(Self);
     try
       vResult := '';
       for vInt1 := 0 to Pred(vObj.ComponentCount) do begin

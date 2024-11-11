@@ -118,8 +118,10 @@ begin
 
     AResponse.Clear;
     AResponse.ContentType := FDefaultContentType;
+
     FParams.CreateParams(vParams);
     vParams.AssignRequest(ARequest);
+
     AResponse.ContentDispositionInline := True;
 
     if Assigned(FOnBeforeExecute) then
