@@ -24,7 +24,7 @@ type
     /// return events to binary 
     procedure ExportEvents(AWriter: TRALBinaryWriter);
 
-    function CanAnswerEvent(ARequest: TRALRequest): TRALRESTDWEvent;
+    function CanAnswerEvent(ARequest: TRALRequest): TRALRESTDWEventServer;
   published
     property Events : TRALRESTDWEventList read FEvents write FEvents;
     property AccessTag : StringRAL read FAccessTag write FAccessTag;
@@ -50,7 +50,7 @@ function TRALRESTDWServerEvents.GetEvents: TStream;
 var
   vWriter: TRALBinaryWriter;
   vInt1, vInt2: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventServer;
   vParam: TRALRESTDWParamMethod;
 begin
   Result := TMemoryStream.Create;
@@ -60,7 +60,7 @@ begin
     vWriter.WriteInteger(FEvents.Count);
     for vInt1 := 0 to Pred(FEvents.Count) do
     begin
-      vEvent := TRALRESTDWEvent(FEvents.Items[vInt1]);
+      vEvent := TRALRESTDWEventServer(FEvents.Items[vInt1]);
 
       vWriter.WriteString(vEvent.BaseURL);
       vWriter.WriteString(vEvent.DefaultContentType);
@@ -89,13 +89,13 @@ end;
 procedure TRALRESTDWServerEvents.ExportEvents(AWriter: TRALBinaryWriter);
 var
   vInt1, vInt2: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventServer;
   vParam: TRALRESTDWParamMethod;
 begin
   AWriter.WriteInteger(FEvents.Count);
   for vInt1 := 0 to Pred(FEvents.Count) do
   begin
-    vEvent := TRALRESTDWEvent(FEvents.Items[vInt1]);
+    vEvent := TRALRESTDWEventServer(FEvents.Items[vInt1]);
 
     AWriter.WriteString(vEvent.EventName);
     AWriter.WriteString(vEvent.GetRoute);
@@ -112,15 +112,15 @@ begin
   end;
 end;
 
-function TRALRESTDWServerEvents.CanAnswerEvent(ARequest: TRALRequest): TRALRESTDWEvent;
+function TRALRESTDWServerEvents.CanAnswerEvent(ARequest: TRALRequest): TRALRESTDWEventServer;
 var
   vInt1: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventServer;
 begin
   Result := nil;
   for vInt1 := 0 to Pred(FEvents.Count) do
   begin
-    vEvent := TRALRESTDWEvent(FEvents.Items[vInt1]);
+    vEvent := TRALRESTDWEventServer(FEvents.Items[vInt1]);
     if vEvent.GetRoute = ARequest.Query then
     begin
       Result := vEvent;

@@ -28,9 +28,9 @@ type
                                          ARequestHeader: TStringList) of object;
   {$ENDIF}
 
-  { TRALRESTDWEvent }
+  { TRALRESTDWEventBase }
 
-  TRALRESTDWEvent = class(TCollectionItem)
+  TRALRESTDWEventBase = class(TCollectionItem)
   private
     FBaseURL: StringRAL;
     FDefaultContentType: StringRAL;
@@ -38,10 +38,6 @@ type
     FEventName: StringRAL;
     FParams: TRALRESTDWParamsMethods;
     FOnlyPreDefinedParams: boolean;
-
-    FOnReplyEvent: TRALRESTDWReplyEvent;
-    FOnReplyEventByType: TRALRESTDWReplyEventByType;
-    FOnBeforeExecute: TNotifyEvent;
   protected
     function GetDisplayName: string; override;
     procedure SetDisplayName(const AValue: string); override;
@@ -55,8 +51,6 @@ type
 
     function GetNamePath: string; override;
     function GetRoute: StringRAL;
-
-    procedure ReplyEvent(ARequest : TRALRequest; AResponse: TRALResponse);
   published
     property BaseURL: StringRAL read FBaseURL write SetBaseURL;
     property DefaultContentType: StringRAL read FDefaultContentType write FDefaultContentType;
@@ -64,7 +58,16 @@ type
     property EventName: StringRAL read FEventName write FEventName;
     property Params: TRALRESTDWParamsMethods read FParams write SetParams;
     property OnlyPreDefinedParams: Boolean read FOnlyPreDefinedParams write FOnlyPreDefinedParams;
+  end;
 
+  TRALRESTDWEventServer = class(TRALRESTDWEventBase)
+  private
+    FOnReplyEvent: TRALRESTDWReplyEvent;
+    FOnReplyEventByType: TRALRESTDWReplyEventByType;
+    FOnBeforeExecute: TNotifyEvent;
+  public
+    procedure ReplyEvent(ARequest : TRALRequest; AResponse: TRALResponse);
+  published
     property OnReplyEvent: TRALRESTDWReplyEvent read FOnReplyEvent write FOnReplyEvent;
     property OnReplyEventByType: TRALRESTDWReplyEventByType read FOnReplyEventByType write FOnReplyEventByType;
     property OnBeforeExecute: TNotifyEvent read FOnBeforeExecute write FOnBeforeExecute;
@@ -74,28 +77,109 @@ type
 
   TRALRESTDWEventList = Class(TOwnedCollection)
   protected
-    function GetEventName(AName : StringRAL): TRALRESTDWEvent;
+    function GetEventName(AName : StringRAL): TRALRESTDWEventBase;
   public
     constructor Create(AOwner: TPersistent);
 
-    property EventByName[AName : StringRAL] : TRALRESTDWEvent read GetEventName;
+    property EventByName[AName : StringRAL] : TRALRESTDWEventBase read GetEventName;
   end;
 
 implementation
 
 { TRALRESTDWEvent }
 
-procedure TRALRESTDWEvent.SetBaseURL(const AValue: StringRAL);
+procedure TRALRESTDWEventBase.SetBaseURL(const AValue: StringRAL);
 begin
   FBaseURL := FixRoute(AValue);
 end;
 
-procedure TRALRESTDWEvent.SetDescription(AValue: TStrings);
+procedure TRALRESTDWEventBase.SetDescription(AValue: TStrings);
 begin
   FDescription.Assign(AValue);
 end;
 
-procedure TRALRESTDWEvent.ReplyEvent(ARequest: TRALRequest; AResponse: TRALResponse);
+constructor TRALRESTDWEventBase.Create(ACollection: TCollection);
+begin
+  inherited;
+  FBaseURL := '/';
+  FDefaultContentType := rctAPPLICATIONJSON;
+  FDescription := TStringList.Create;
+  FEventName := 'event' + IntToStr(Index);
+  FParams := TRALRESTDWParamsMethods.Create(Self);
+end;
+
+destructor TRALRESTDWEventBase.Destroy;
+begin
+  FreeAndNil(FDescription);
+  FreeAndNil(FParams);
+  inherited;
+end;
+
+function TRALRESTDWEventBase.GetRoute: StringRAL;
+begin
+  Result := FixRoute(FBaseURL + '/' + FEventName);
+end;
+
+function TRALRESTDWEventBase.GetDisplayName: string;
+begin
+  Result := FEventName;
+  inherited;
+end;
+
+function TRALRESTDWEventBase.GetNamePath: string;
+var
+  vName: StringRAL;
+begin
+  Result := '';
+  if Self = nil then
+    Exit;
+
+  vName := Collection.GetNamePath;
+  Result := vName + '_' + FEventName;
+end;
+
+procedure TRALRESTDWEventBase.SetDisplayName(const AValue: string);
+begin
+  if Trim(AValue) <> '' then
+    FEventName := AValue;
+  inherited;
+end;
+
+procedure TRALRESTDWEventBase.SetParams(const Value: TRALRESTDWParamsMethods);
+begin
+  FParams := Value;
+end;
+
+{ TRALRESTDWEventList }
+
+function TRALRESTDWEventList.GetEventName(AName : StringRAL): TRALRESTDWEventBase;
+var
+  vInt1: IntegerRAL;
+  vEvent: TRALRESTDWEventBase;
+begin
+  Result := nil;
+  for vInt1 := 0 to Pred(Count) do
+  begin
+    vEvent := TRALRESTDWEventBase(Items[vInt1]);
+    if SameText(vEvent.EventName, AName) then
+    begin
+      Result := vEvent;
+      Break;
+    end;
+  end;
+end;
+
+constructor TRALRESTDWEventList.Create(AOwner: TPersistent);
+begin
+  if SameText(AOwner.ClassName, 'TRALRESTDWServerEvents') then
+    inherited Create(AOwner, TRALRESTDWEventServer)
+  else
+    inherited Create(AOwner, TRALRESTDWEventBase)
+end;
+
+{ TRALRESTDWEventServer }
+
+procedure TRALRESTDWEventServer.ReplyEvent(ARequest: TRALRequest; AResponse: TRALResponse);
 var
   vParams: TRALRESTDWParams;
   {$IFDEF RDW143}
@@ -159,82 +243,6 @@ begin
     FreeAndNil(vHeader);
     FreeAndNil(vParams);
   end;
-end;
-
-constructor TRALRESTDWEvent.Create(ACollection: TCollection);
-begin
-  inherited;
-  FBaseURL := '/';
-  FDefaultContentType := rctAPPLICATIONJSON;
-  FDescription := TStringList.Create;
-  FEventName := 'event' + IntToStr(Index);
-  FParams := TRALRESTDWParamsMethods.Create(Self);
-end;
-
-destructor TRALRESTDWEvent.Destroy;
-begin
-  FreeAndNil(FDescription);
-  FreeAndNil(FParams);
-  inherited;
-end;
-
-function TRALRESTDWEvent.GetRoute: StringRAL;
-begin
-  Result := FixRoute(FBaseURL + '/' + FEventName);
-end;
-
-function TRALRESTDWEvent.GetDisplayName: string;
-begin
-  Result := FEventName;
-  inherited;
-end;
-
-function TRALRESTDWEvent.GetNamePath: string;
-var
-  vName: StringRAL;
-begin
-  Result := '';
-  if Self = nil then
-    Exit;
-
-  vName := Collection.GetNamePath;
-  Result := vName + '_' + FEventName;
-end;
-
-procedure TRALRESTDWEvent.SetDisplayName(const AValue: string);
-begin
-  if Trim(AValue) <> '' then
-    FEventName := AValue;
-  inherited;
-end;
-
-procedure TRALRESTDWEvent.SetParams(const Value: TRALRESTDWParamsMethods);
-begin
-  FParams := Value;
-end;
-
-{ TRALRESTDWEventList }
-
-function TRALRESTDWEventList.GetEventName(AName : StringRAL): TRALRESTDWEvent;
-var
-  vInt1: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
-begin
-  Result := nil;
-  for vInt1 := 0 to Pred(Count) do
-  begin
-    vEvent := TRALRESTDWEvent(Items[vInt1]);
-    if SameText(vEvent.EventName, AName) then
-    begin
-      Result := vEvent;
-      Break;
-    end;
-  end;
-end;
-
-constructor TRALRESTDWEventList.Create(AOwner: TPersistent);
-begin
-  inherited Create(AOwner, TRALRESTDWEvent);
 end;
 
 end.

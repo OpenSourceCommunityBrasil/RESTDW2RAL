@@ -67,7 +67,7 @@ end;
 
 procedure TRALRESTDWClientEvents.CreateDWParams(AEventName: StringRAL; var AParams: TRALRESTDWParams);
 var
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventBase;
   vInt1: IntegerRAL;
   vFound: boolean;
   vParam: TRALRESTDWJSONParam;
@@ -122,7 +122,7 @@ function TRALRESTDWClientEvents.SendEvent(AEventName: StringRAL;
   var ANativeResult: StringRAL; AEventType: TRALRESTDWSendEvent;
   AsSyncExec: Boolean): Boolean;
 var
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventBase;
   vParam: TRALParam;
   vJsonParam: TRALRESTDWJSONParam;
   vStream: TStream;
@@ -177,7 +177,7 @@ procedure TRALRESTDWClientEvents.SetEvents(AStream: TStream);
 var
   vWriter: TRALBinaryWriter;
   vTotEvents, vTotParams, vInt1, vInt2: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventBase;
   vParam: TRALRESTDWParamMethod;
 begin
   ClearEvents;
@@ -189,7 +189,7 @@ begin
     vTotEvents := vWriter.ReadInteger;
     for vInt1 := 1 to vTotEvents do
     begin
-      vEvent := TRALRESTDWEvent(FEvents.Add);
+      vEvent := TRALRESTDWEventBase(FEvents.Add);
 
       vEvent.BaseURL := vWriter.ReadString;
       vEvent.DefaultContentType := vWriter.ReadString;

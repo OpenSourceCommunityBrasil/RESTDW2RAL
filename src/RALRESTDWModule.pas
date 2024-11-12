@@ -54,7 +54,7 @@ var
   vClass: TComponentClass;
   vObj, vComp: TComponent;
   vInt1: IntegerRAL;
-  vEvent: TRALRESTDWEvent;
+  vEvent: TRALRESTDWEventServer;
   vServerEventName, vServer, vAccessTag, vAccess: StringRAL;
   vBlock: boolean;
 begin
