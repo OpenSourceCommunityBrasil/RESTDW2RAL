@@ -6,7 +6,7 @@ uses
   Classes, SysUtils,
   RALCustomObjects, RALTypes, RALRESTDWEvents, RALStream, RALParams,
   RALRESTDWParamsMethods, RALRESTDWTypes, RALClient, RALRESTDWParams,
-  RALTools;
+  RALTools, RALResponse;
 
 type
   TRALRESTDWSendEvent = (seGET, sePOST, sePUT, seDELETE, sePATCH);
@@ -126,6 +126,7 @@ var
   vParam: TRALParam;
   vJsonParam: TRALRESTDWJSONParam;
   vStream: TStream;
+  vResponse : TRALResponse;
 begin
   Result := False;
   vEvent := FEvents.EventByName[AEventName];
@@ -138,37 +139,41 @@ begin
 
     AParams.AppendRequest(FRALClient.Request);
 
-    FRALClient.Route := vEvent.GetRoute;
+    vResponse := nil;
     try
-      case AEventType of
-        seGET    : FRALClient.Get;
-        sePOST   : FRALClient.Post;
-        sePUT    : FRALClient.Put;
-        seDELETE : FRALClient.Delete;
-        sePATCH  : FRALClient.Patch;
-      end;
-      Result := True;
-      AParams.AssignResponse(FRALClient.Response);
+      try
+        case AEventType of
+          seGET    : FRALClient.Get(vEvent.GetRoute, vResponse);
+          sePOST   : FRALClient.Post(vEvent.GetRoute, vResponse);
+          sePUT    : FRALClient.Put(vEvent.GetRoute, vResponse);
+          seDELETE : FRALClient.Delete(vEvent.GetRoute, vResponse);
+          sePATCH  : FRALClient.Patch(vEvent.GetRoute, vResponse);
+        end;
+        Result := True;
+        AParams.AssignResponse(vResponse);
 
-      vParam := FRALClient.Response.ParamByName(cUndefined);
-      if vParam <> nil then
-      begin
-        vJsonParam := AParams.NewParam;
-        vJsonParam.ParamName := cUndefined;
+        vParam := vResponse.ParamByName(cUndefined);
+        if vParam <> nil then
+        begin
+          vJsonParam := AParams.NewParam;
+          vJsonParam.ParamName := cUndefined;
 
-        vStream := vParam.SaveToStream;
-        try
-          vJsonParam.LoadFromStream(vStream);
-        finally
-          FreeAndNil(vStream);
+          vStream := vParam.SaveToStream;
+          try
+            vJsonParam.LoadFromStream(vStream);
+          finally
+            FreeAndNil(vStream);
+          end;
+        end;
+      except
+        on e : Exception do
+        begin
+          AError := e.Message;
+          ANativeResult := IntToStr(vResponse.StatusCode);
         end;
       end;
-    except
-      on e : Exception do
-      begin
-        AError := e.Message;
-        ANativeResult := IntToStr(FRALClient.Response.StatusCode);
-      end;
+    finally
+      FreeAndNil(vResponse);
     end;
   end;
 end;
@@ -217,6 +222,8 @@ end;
 function TRALRESTDWClientEvents.GetServerEvents : StringRAL;
 var
   vParam: TRALParam;
+  vUrl : StringRAL;
+  vResponse : TRALResponse;
 begin
   Result := '';
 
@@ -230,23 +237,28 @@ begin
   if FAccessTag <> '' then
     FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
 
-  FRALClient.Route := FixRoute(FModuleRoute + '/getservereventslist');
+  vUrl := FixRoute(FModuleRoute + '/getservereventslist');
+  vResponse := nil;
   try
-    FRALClient.Post;
-    vParam := FRALClient.Response.Body;
-    if vParam <> nil then
-      Result := vParam.AsString;
-  except
-    on e : Exception do
-    begin
-      raise Exception.CreateFmt('Erro ao recuperar os ServerEvents: %s', [e.Message]);
+    try
+      FRALClient.Post(vUrl, vResponse);
+      vParam := vResponse.Body;
+      if vParam <> nil then
+        Result := vParam.AsString;
+    except
+      on e : Exception do
+        raise Exception.CreateFmt('Erro ao recuperar os ServerEvents: %s', [e.Message]);
     end;
+  finally
+    FreeAndNil(vResponse);
   end;
 end;
 
 function TRALRESTDWClientEvents.GetEvents: TStream;
 var
   vParam: TRALParam;
+  vUrl : StringRAL;
+  vResponse : TRALResponse;
 begin
   Result := nil;
 
@@ -262,17 +274,22 @@ begin
     FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
   FRALClient.Request.Params.AddParam('servereventname', FServerEventName, rpkBODY);
 
-  FRALClient.Route := FixRoute(FModuleRoute + '/getevents');
+  vUrl := FixRoute(FModuleRoute + '/getevents');
+  vResponse := nil;
   try
-    FRALClient.Post;
-    vParam := FRALClient.Response.Body;
-    if vParam <> nil then
-      Result := vParam.SaveToStream;
-  except
-    on e : Exception do
-    begin
-      raise Exception.CreateFmt('Erro ao recuperar os Events: %s', [e.Message]);
+    try
+      FRALClient.Post(vUrl, vResponse);
+      vParam := vResponse.Body;
+      if vParam <> nil then
+        Result := vParam.SaveToStream;
+    except
+      on e : Exception do
+      begin
+        raise Exception.CreateFmt('Erro ao recuperar os Events: %s', [e.Message]);
+      end;
     end;
+  finally
+    FreeAndNil(vResponse);
   end;
 end;
 
