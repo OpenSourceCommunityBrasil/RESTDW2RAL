@@ -1,0 +1,49 @@
+# Nada aqui e fonte: e saida de compilacao ou estado de sessao da IDE.
+#
+# Os projetos das demos ficam de fora de proposito. Abrir o .dpr no Delphi (ou o
+# .lpi no Lazarus) recria o .dproj na hora, e o que a IDE grava nele carrega a
+# lista inteira de pacotes instalados na maquina de quem abriu - ruido que
+# aparecia em todo diff. O que descreve a demo esta no .dpr, no .pas e no .dfm.
+exemplo/**/*.dproj
+exemplo/**/*.dproj.local
+exemplo/**/*.lps
+
+# Delphi
+*.local
+*.identcache
+*.res
+*.dcu
+*.stat
+*.drc
+*.map
+*.rsm
+*.tvsconfig
+__history/
+__recovery/
+Win32/
+Win64/
+Android/
+Android64/
+Linux64/
+OSX64/
+OSXARM64/
+iOSDevice64/
+iOSSimARM64/
+
+# Lazarus / FPC
+*.compiled
+*.ppu
+*.or
+*.rst
+*.lrt
+lib/
+backup/
+
+# binarios
+*.exe
+*.dll
+*.bpl
+*.dcp
+*.so
+*.a
+*.o
