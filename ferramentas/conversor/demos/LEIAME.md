@@ -48,10 +48,17 @@ Preencha o que for seu antes de rodar. No `FullServer` isso vai para o `.ini` ao
 executável, cujo nome vem do **nome do exe** (`Config_<exe>.ini`) — há um
 `Config_RESTDWFullServer.ini.exemplo` para copiar.
 
-Uma alteração além da limpeza, e está comentada no fonte: o `FullServer` sumia para a
-bandeja no instante em que o servidor subia, e no Windows 11 a janela não volta — quem abre
-a demo fica sem como pará-la. A chamada automática saiu; o método continua lá e o duplo
-clique no ícone da bandeja ainda traz a janela de volta.
+Duas alterações além da limpeza, ambas comentadas no fonte:
+
+- O `FullServer` sumia para a bandeja no instante em que o servidor subia, e no Windows 11
+  a janela não volta — quem abre a demo fica sem como pará-la. A chamada automática saiu; o
+  método continua lá e o duplo clique no ícone da bandeja ainda traz a janela de volta.
+- No `FullClient`, o `SetKeys` (que o botão **Execute** chama) fazia
+  `FindField(chave).ProviderFlags := ...` sem testar `Nil`. A chave vem da tabela do
+  *UpdateTableName*, que não é necessariamente a tabela do `SELECT` aberto — e com os
+  próprios valores que a demo traz (`IMAGELIST` no comando, `PACIENTES` no campo) o
+  `FindField` devolve `Nil` e o Execute terminava em violação de acesso, no RDW igual.
+  Ganhou o mesmo teste de `Nil` que o `btnOpenClick` já fazia com `FULL_NAME` e `UF`.
 
 ## O `.fdb` das demos não serve num Firebird novo
 
@@ -80,7 +87,12 @@ Os campos de `PACIENTES` são exatamente os `FieldDefs` que o `TRESTDWClientSQL`
 | --- | --- | --- | --- |
 | `SimpleServer` | sim | sim | 200 no GET e DELETE, 201 no POST/PUT/PATCH, 404 em rota inexistente |
 | `FileTransfer` | sim | sim | lista, baixa e envia arquivo, conteúdo idêntico dos dois lados |
-| `FullServer` + `FullClient` | sim | sim | eventos (`helloworld`, `servertime`) e banco (select, ExecSQL, ApplyUpdates gravando no Firebird) |
+| `FullServer` + `FullClient` | sim | sim | eventos (`helloworld`, `servertime`), banco (Open, Execute, ApplyUpdates gravando no Firebird), edição na grid + ApplyUpdates |
+
+O botão **Get Employee** do `FullClient` responde *Event "getemployee" not found*, e está
+certo: o `.dfm` do `FullServer` não publica esse evento — os handlers `DWServerEvents1...`
+ficaram no `.pas` de uma versão anterior da demo, sem componente que os declare. É assim no
+RDW original também.
 
 ## Detalhes de build
 

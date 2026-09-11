@@ -66,6 +66,9 @@ type
       TRALDBSQLCache privado e deixa o CachedUpdates do FireDAC desligado,
       entao nem ChangeCount nem a lista dele servem de fora. }
     FPendentes: IntegerRAL;
+    { ligado enquanto o proprio dataset esta gravando e o CommitOnChange puxa
+      o ApplyUpdates de dentro do InternalPost }
+    FEmPost: Boolean;
     FResponseDone: boolean;
     FLastError: StringRAL;
     FMasterFields: StringRAL;
@@ -703,7 +706,14 @@ begin
   Inc(FPendentes);
 
   if CommitOnChange and (not FApplying) then
-    Self.ApplyUpdates();
+  begin
+    FEmPost := True;
+    try
+      Self.ApplyUpdates();
+    finally
+      FEmPost := False;
+    end;
+  end;
 end;
 
 procedure TRALRESTDWClientSQL.InternalDelete;
@@ -712,7 +722,14 @@ begin
   Inc(FPendentes);
 
   if CommitOnChange and (not FApplying) then
-    Self.ApplyUpdates();
+  begin
+    FEmPost := True;
+    try
+      Self.ApplyUpdates();
+    finally
+      FEmPost := False;
+    end;
+  end;
 end;
 
 procedure TRALRESTDWClientSQL.ExecSQL;
@@ -736,21 +753,31 @@ begin
   if FApplying then
     Exit;
 
-  { A edicao aberta entra junto. Numa grid o registro fica em dsEdit ate
-    alguem mudar de linha, e o botao de aplicar do projeto chama ApplyUpdates
-    direto: sem este Post a alteracao que esta na tela nunca virou pendencia,
-    e o proximo Open a devolvia como estava. E o que o RDW faz. }
-  if State in [dsEdit, dsInsert] then
-    Post;
-
-  { Sem nada pendente nao se chama o RAL: ele nao trata cache vazio e quebra
-    com violacao de acesso la dentro. No RDW aplicar sem alteracao e no-op, e
-    e isso que o codigo migrado espera. }
-  if (not Active) or (FPendentes = 0) then
-    Exit;
-
+  { A guarda sobe antes de tudo, inclusive antes do Post abaixo. O InternalPost
+    chama ApplyUpdates de volta quando CommitOnChange esta ligado - e a demo
+    FullClient do RDW liga, com AutoCommitData = True -, e com a guarda depois
+    do Post isso era recursao infinita: ApplyUpdates -> Post -> InternalPost ->
+    ApplyUpdates -> ... ate estourar a pilha. }
   FApplying := True;
   try
+    { A edicao aberta entra junto. Numa grid o registro fica em dsEdit ate
+      alguem mudar de linha, e o botao de aplicar do projeto chama ApplyUpdates
+      direto: sem este Post a alteracao que esta na tela nunca virou pendencia,
+      e o proximo Open a devolvia como estava. E o que o RDW faz.
+
+      Menos quando quem chamou foi o proprio InternalPost, pelo CommitOnChange:
+      ali a gravacao esta em curso e o estado ainda e dsInsert/dsEdit, entao um
+      Post aqui reentraria no Post que esta rodando - violacao de acesso na
+      primeira linha inserida. }
+    if (not FEmPost) and (State in [dsEdit, dsInsert]) then
+      Post;
+
+    { Sem nada pendente nao se chama o RAL: ele nao trata cache vazio e quebra
+      com violacao de acesso la dentro. No RDW aplicar sem alteracao e no-op, e
+      e isso que o codigo migrado espera. }
+    if (not Active) or (FPendentes = 0) then
+      Exit;
+
     FResponseDone := False;
     inherited ApplyUpdates;
 

@@ -13,6 +13,10 @@ uses
 
 type
 
+  { So o AppendTo usa - e o que faz o append do request e o do response
+    serem a mesma rotina. }
+  TRALRESTDWDirections = set of TRALRESTDWObjectDirection;
+
   { TRALRESTDWJSONParam }
 
   TRALRESTDWJSONParam = class(TPersistent)
@@ -203,6 +207,8 @@ type
     function GetRawBody: TRALRESTDWJSONParam;
     procedure SetParamIndex(AIndex: IntegerRAL; AValue: TRALRESTDWJSONParam);
     procedure SetParamName(AName: StringRAL; AValue: TRALRESTDWJSONParam);
+    /// Writes every param of the given directions into a RAL container
+    procedure AppendTo(ARALParams: TRALParams; ADirections: TRALRESTDWDirections);
   public
     constructor Create;
     destructor Destroy; override;
@@ -734,11 +740,10 @@ begin
   if AParam = nil then
     Exit;
 
-  if IsNull then
-  begin
-    AParam.AsString := '';
+  { Nada a escrever. Conteudo vazio quebra o RAL - a explicacao inteira esta no
+    AppendTo, que e quem decide se o param chega a existir. }
+  if Size = 0 then
     Exit;
-  end;
 
   { A typed payload keeps the exact value and does not depend on either side's
     locale, which is what used to break floats and dates between machines. Text
@@ -772,7 +777,17 @@ begin
       rptBoolean  : StoreText(BooleanToString(AParam.AsBoolean));
       rptDateTime : StoreText(RALRESTDWDateTimeToStr(AParam.AsDateTime));
       else
-        StoreStream(AParam.Content);
+        { Chegou tipado e aqui foi declarado como texto: as duas pontas
+          discordam, e isso e normal - quem declarou o evento disse ovString e
+          o codigo do outro lado chamou AsInteger, que carimba o tipo do que
+          acabou de escrever. Guardar o Content cru gravaria os quatro bytes
+          do inteiro como se fossem caracteres, e o AsInteger daqui leria 0:
+          era o que fazia o helloworld da demo FullServer responder
+          "Param 0 = 0" com o cliente tendo mandado 10. O GetAsString do RAL
+          renderiza o valor tipado de forma invariante, que e a leitura certa.
+          Binario de verdade nunca cai aqui: ele chega sem marca de tipo, pelo
+          ramo de baixo. }
+        StoreText(AParam.AsString);
     end;
   end
   else
@@ -1243,30 +1258,8 @@ begin
   end;
 end;
 
-procedure TRALRESTDWParams.AppendRequest(ARequest: TRALRequest);
-var
-  vInt1: IntegerRAL;
-  vParam: TRALRESTDWJSONParam;
-  vRALParam : TRALParam;
-begin
-  for vInt1 := 0 to Pred(FParams.Count) do
-  begin
-    vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
-    if (vParam.ObjectDirection in [odIN, odINOUT]) then
-    begin
-      vRALParam := ARequest.ParamByName(vParam.ParamName);
-      if vRALParam = nil then
-      begin
-        vRALParam := ARequest.Params.NewParam;
-        vRALParam.ParamName := vParam.ParamName;
-      end;
-      vParam.WriteToRALParam(vRALParam);
-      vRALParam.Kind := rpkBODY;
-    end;
-  end;
-end;
-
-procedure TRALRESTDWParams.AppendResponse(AResponse: TRALResponse);
+procedure TRALRESTDWParams.AppendTo(ARALParams: TRALParams;
+  ADirections: TRALRESTDWDirections);
 var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
@@ -1275,18 +1268,44 @@ begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
-    if (vParam.ObjectDirection in [odOUT, odINOUT]) then
+    if not (vParam.ObjectDirection in ADirections) then
+      Continue;
+
+    { Param sem conteudo nao viaja, e isso nao e escolha de estilo: e o unico
+      formato que nao quebra. Escrever vazio cai no TRALStringStream, que
+      termina todo write em Write(ABytes[0], 0) e todo read em
+      Read(vBytes[0], 0) - indexar [0] de um array vazio: ERangeError em
+      qualquer build com range check, que e o que o IDE gera em Debug, e era o
+      erro que aparecia logo depois do Execute da demo. Criar o param e deixa-lo
+      sem conteudo e pior ainda: o encoder multipart faz AsStream.Position := 0
+      sobre nil e da violacao de acesso em qualquer build.
+
+      O proprio RAL trata vazio assim - TRALParams.AddParam(nome, '') devolve
+      nil sem criar param nenhum -, e do outro lado nada se perde: o param
+      declarado continua existindo e responde como nulo, que e exatamente o que
+      "sem valor" quer dizer no RDW. }
+    if vParam.Size = 0 then
+      Continue;
+
+    vRALParam := ARALParams.Get[vParam.ParamName];
+    if vRALParam = nil then
     begin
-      vRALParam := AResponse.ParamByName(vParam.ParamName);
-      if vRALParam = nil then
-      begin
-        vRALParam := AResponse.Params.NewParam;
-        vRALParam.ParamName := vParam.ParamName;
-      end;
-      vParam.WriteToRALParam(vRALParam);
-      vRALParam.Kind := rpkBODY;
+      vRALParam := ARALParams.NewParam;
+      vRALParam.ParamName := vParam.ParamName;
     end;
+    vParam.WriteToRALParam(vRALParam);
+    vRALParam.Kind := rpkBODY;
   end;
+end;
+
+procedure TRALRESTDWParams.AppendRequest(ARequest: TRALRequest);
+begin
+  AppendTo(ARequest.Params, [odIN, odINOUT]);
+end;
+
+procedure TRALRESTDWParams.AppendResponse(AResponse: TRALResponse);
+begin
+  AppendTo(AResponse.Params, [odOUT, odINOUT]);
 end;
 
 end.

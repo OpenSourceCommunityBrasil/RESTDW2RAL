@@ -48,16 +48,27 @@ There is nothing to run as a test. Verification is: compile the package, compile
 Install order — `RALRESTDW` requires `PascalRALDsgn`, which requires `PascalRAL` + `designide`:
 
 ```powershell
-msbuild ..\PascalRAL\pkg\Delphi\PascalRAL.dproj     /t:Build /p:Config=Release /p:Platform=Win32
-msbuild ..\PascalRAL\pkg\Delphi\PascalRALDsgn.dproj /t:Build /p:Config=Release /p:Platform=Win32
-msbuild pkg\delphi\RALRESTDW.dproj                  /t:Build /p:Config=Release /p:Platform=Win32
-msbuild pkg\delphi\RALRESTDWIndy.dproj              /t:Build /p:Config=Release /p:Platform=Win32
+$bds = "C:\Program Files (x86)\Embarcadero\Studio\23.0"
+$pub = "C:\Users\Public\Documents\Embarcadero\Studio\23.0"   # where Bpl and Dcp live
+$dlp = "$bds\lib\Win32\release;$pub\Dcp"
 
-lazbuild --build-ide= pkg\lazarus\RALRESTDW.lpk
-lazbuild --build-ide= pkg\lazarus\RALRESTDWIndy.lpk
+# one per package, with the runtime list its .dpk actually requires
+msbuild pkg\delphi\RALRESTDW.dproj     /t:Build /p:Config=Release /p:Platform=Win32 `
+  /p:DelphiLibraryPath="$dlp" /p:UsePackages=true /p:DCC_UsePackage="rtl;PascalRALDsgn"
+msbuild pkg\delphi\RALRESTDWDB.dproj   ... /p:DCC_UsePackage="rtl;RALRESTDW;RALDBFireDACLink"
+msbuild pkg\delphi\RALRESTDWIndy.dproj ... /p:DCC_UsePackage="rtl;RALRESTDW;IndyRAL"
+
+lazbuild --build-all pkg\lazarus\RALRESTDW.lpk      # same for DB and Indy
 ```
 
-If msbuild dies with `MSB6003` / "dcc could not be run", see `../PascalRAL/CLAUDE.md` — it is the `DelphiLibraryPath` length problem, not this package.
+Four things about that command line, each of which has already cost an afternoon:
+
+- **`/p:DelphiLibraryPath` is not optional on a workstation with many components installed.** Plain `msbuild` dies with `MSB6003` / "dcc could not be run": the targets fold the IDE's whole library path into `-U`, `-R`, `-I` **and** `-O`. `../PascalRAL/CLAUDE.md` has the long version. `%BDSLIB%` is empty outside `rsvars.bat`, so spell the path out.
+- **`/p:UsePackages=true` with the right `/p:DCC_UsePackage`, or the `.bpl` comes out statically linked** and the IDE refuses it with a duplicate-unit error. Healthy sizes here: `RALRESTDW` 208 KB, `RALRESTDWDB` 92, `RALRESTDWIndy` 36.
+- **The `.dproj` lists are not to be trusted** — `RALRESTDWIndy.dproj` named `RALDBFireDACLink` (copied from the database package) where the `.dpk` requires `IndyRAL`. That is fixed, but check the `.dpk`'s `requires` against the `.dproj` whenever the IDE rewrites one.
+- **Building is installing**: the `.bpl` goes to `$pub\Bpl` and the `.dcp` to `$pub\Dcp`, which is where the registry already points. The IDE has to be closed, or the `.bpl` is in use.
+
+What the IDE compiles when somebody builds a **demo** is not the `.bpl`: `ral_restdw\src` is on the library path, so it compiles the units from source. A stale `.dcu` left in `src/` hides the fix you just made — delete them (`*.dcu` is git-ignored, and the package writes its own to `pkg/delphi/Win32/Release`).
 
 ### Checking a source change without installing anything
 
@@ -99,7 +110,16 @@ is older than the units it depends on.
 
 It needs `pkg/delphi/RALRESTDW.res`, which the IDE generates and the repo does not track - `brcc32` over a one-line `.rc` produces a usable one. Prefer the oldest API that does the job: this package should install on a PascalRAL that is a few weeks old.
 
-**Compile with range checking on at least once.** `dcc32 --no-config` leaves `$R` off, the IDE turns it on for every Debug build, and the difference is not academic: `TRALStringStream` ends every write in `WriteBytes`, which does `Write(ABytes[0], Length(ABytes))` - indexing `[0]` of an empty array. Harmless with the check off, `ERangeError` with it on, and it fires on something as ordinary as a param declared with no `DefaultValue`. Nothing in this repo may hand empty content to those constructors; `StoreText`/`StoreStream` build an empty stream instead. Add `'-$R+'` to the dcc32 line (quoted, or PowerShell eats `$R` as a variable) and run the demos again.
+**Compile with range checking on at least once.** `dcc32 --no-config` leaves `$R` off, the IDE turns it on for every Debug build, and the difference is not academic: `TRALStringStream` ends every write in `WriteBytes`, which does `Write(ABytes[0], Length(ABytes))` - indexing `[0]` of an empty array. Harmless with the check off, `ERangeError` with it on, and it fires on something as ordinary as a param declared with no `DefaultValue`. Add `'-$R+'` to the dcc32 line (quoted, or PowerShell eats `$R` as a variable) and run the demos again.
+
+**An empty param must not reach RAL at all** - not empty, and not created-and-left-blank. Both shapes break, in different builds:
+
+| what you hand RAL | what happens |
+| --- | --- |
+| `AsString := ''` or a zero-length stream | `TRALStringStream` ends every write in `Write(ABytes[0], 0)` and every read in `Read(vBytes[0], 0)` - `ERangeError` under `$R+`, silent otherwise |
+| a `TRALParam` with `Content = nil` | the multipart encoder does `vItem.AsStream.Position := 0` over `nil` - access violation in **every** build, as soon as a second body param makes the body multipart |
+
+So `TRALRESTDWParams.AppendTo` skips the param entirely when `Size = 0`, which is also what RAL itself does (`TRALParams.AddParam(name, '')` returns `nil` and creates nothing). Nothing is lost: the declared param still exists on the other side and reads back as null, which is what "no value" means in RDW. `StoreText`/`StoreStream` keep building an empty stream - that is our own container, not RAL's.
 
 ### Lazarus
 
@@ -186,6 +206,7 @@ Two things are worth knowing before editing this unit:
 
 - **`StoreText`/`StoreStream` write the payload without touching `ObjectValue`.** Every public `SetAs*` stamps the type it just wrote, which is right when the application says "this is an integer" and wrong for the paths that only carry a value across — cloning a declared param, reading the wire, applying a `DefaultValue`. Those used to flatten every declared type to `ovString`. Use `StoreText`/`SetValue` on any new copy path.
 - **`WriteToRALParam`/`ReadFromRALParam` are the only places that touch the wire.** They map `ObjectValue` → `TRALParamType` (`ObjectValueToParamType`) and use RAL's `SetTypedInteger/Int64/Double/Currency/Boolean/DateTime`, so numbers and dates travel as little-endian binary and never pass through `FloatToStr`. Text and binary have no typed form and travel as the stream. Where a value *must* become text (JSON, `AsString`), `RALRESTDWTypes` supplies invariant conversions — `RALRESTDWFloatToStr`, `RALRESTDWDateTimeToStr` and friends. Adding an `As*` that formats with the local settings reintroduces the locale bug.
+- **The two sides disagree about the type more often than you would think, and the read has to absorb it.** `SetAs*` stamps the type it just wrote, so a param the event declares as `ovString` travels as a typed int32 the moment the application calls `AsInteger` on it - which the RDW `FullServer` demo does, and the receiving side still has `ovString` from its own declaration. Reading `AParam.Content` there stores the four raw bytes as if they were characters and `AsInteger` comes back 0; that is why `helloworld` answered "Param 0 = 0" to a client that had sent 10. `ReadFromRALParam` renders a typed arrival with `AParam.AsString` (RAL's invariant rendering) whenever the declared type is text. Real binary never passes there - it arrives with no type marker at all.
 
 `toDataset` is served by `LoadFromDataSet`/`SaveToDataSet` over `TRALStorageBINLink`, the same storage `TRALDBModule` uses.
 
@@ -294,10 +315,17 @@ Names that are *not* RDW-namespaced (`TDataMode`, `TObjectValue`, `TTypeObject`,
   frozen window on every `ExecSQL`, with the command already executed. `ExecSQL` and
   `ApplyUpdates` now mark the response done before calling `WaitResponse`, which is
   still called because it is what raises the stored error in the caller's context.
-- **`ApplyUpdates` posts the open edit first.** In a grid the record sits in `dsEdit`
-  until the user leaves the row, and the project's button calls `ApplyUpdates` straight
-  away: without the `Post` the change on screen never became a pending statement and the
-  next `Open` brought back the old value. RDW posts it too.
+- **`ApplyUpdates` posts the open edit first, and that `Post` calls back into it.** In a
+  grid the record sits in `dsEdit` until the user leaves the row, and the project's
+  button calls `ApplyUpdates` straight away: without the `Post` the change on screen
+  never became a pending statement and the next `Open` brought back the old value. RDW
+  posts it too. But `CommitOnChange` - which the `FullClient` demo turns on through
+  `AutoCommitData` - makes `InternalPost` call `ApplyUpdates` again, so the order of the
+  two lines is load-bearing: the `FApplying` guard has to be raised **before** the
+  `Post`, or it is `ApplyUpdates` -> `Post` -> `InternalPost` -> `ApplyUpdates` until the
+  stack blows. And the reverse call needs its own flag (`FEmPost`): arriving from inside
+  `InternalPost` the state is still `dsInsert`, so posting again re-enters the `Post`
+  that is running - access violation on the first inserted row.
 - **The DB calls are async in RAL and synchronous here.** `TRALDBConnection` posts `Open`/`ExecSQL`/`ApplyUpdates` with a callback and `ebMultiThread`, so they return before the answer exists. `TRALRESTDWClientSQL.WaitResponse` pumps `CheckSynchronize` until the callback lands, because RDW's are synchronous and ported code reads `RecordCount` on the next line. It re-enters: the callback calls `SetActive` again, and `FWaiting` is what keeps that from waiting on itself. `ThreadRequest` opts back out.
 - **An error raised inside the callback escapes the caller's `try..except`.** That is why `InternalError` only *stores* the message and `WaitResponse` raises it - in the context of whoever called `Open`.
 - **`RootPath` is a folder on disk, not a URL prefix.** RDW serves static files from it

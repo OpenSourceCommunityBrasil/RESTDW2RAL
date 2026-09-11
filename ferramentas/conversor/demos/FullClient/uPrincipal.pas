@@ -151,7 +151,13 @@ Begin
     RESTDWIdDatabase1.PoolerList;
    End;
   For I := 0 To vKeyFields.Count -1 Do
-   RESTDWClientSQL1.FindField(vKeyFields[I]).ProviderFlags := [pfInUpdate, pfInWhere, pfInKey];
+   //A chave vem da tabela do UpdateTableName, que nao e obrigatoriamente
+   //a tabela do SELECT que esta aberto - com os valores que este demo ja
+   //traz, IMAGELIST no comando e PACIENTES aqui, o FindField devolve Nil e
+   //a linha de baixo dava violacao de acesso. O mesmo teste que o
+   //btnOpenClick faz com FULL_NAME e UF.
+   If RESTDWClientSQL1.FindField(vKeyFields[I]) <> Nil Then
+    RESTDWClientSQL1.FindField(vKeyFields[I]).ProviderFlags := [pfInUpdate, pfInWhere, pfInKey];
  Finally
   FreeAndNil(vKeyFields);
  End;
