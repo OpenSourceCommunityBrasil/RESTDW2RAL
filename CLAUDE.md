@@ -127,7 +127,7 @@ Three FPC-only defects have already been caught this way, and all three compile 
 
 `exemplo/delphi/servidor` + `exemplo/delphi/cliente` exercise every feature. For an automated pass, a console harness that drives `TRALRESTDWClientEvents` against the running server covers discovery, typed params, datasets, per-event auth and the failure paths in one run — that is how the current behaviour was validated (19 checks, all green).
 
-**Our own demos are not the real check.** They were written against this code and agree with it by construction; a migrating user's project was not. `ferramentas/conversor/demos/` carries five real RDW demos **unconverted**, exactly as RDW publishes them minus credentials and machine paths - copy one out, convert it, compile it, and run it. Its `LEIAME.md` says what each exercises and what was blanked. `SimpleServer` is the smallest complete one and the fastest signal: set `Active = True` in its `.dfm` and drive `/teste` with every verb (the handler answers 200 for GET/DELETE and 201 for POST/PUT/PATCH, so a wrong status is a real failure and not a guess). That loop is what found every defect worth finding here - the wrong bind port, the duplicated `uses`, the missing `TRESTDWAuthBasic` alias, the `var String` mismatch.
+**Our own demos are not the real check.** They were written against this code and agree with it by construction; a migrating user's project was not. `ferramentas/conversor/demos/` carries four real RDW demos **unconverted**, exactly as RDW publishes them minus credentials and machine paths - copy one out, convert it, compile it, and run it. Its `LEIAME.md` says what each exercises and what was blanked. `SimpleServer` is the smallest complete one and the fastest signal: set `Active = True` in its `.dfm` and drive `/teste` with every verb (the handler answers 200 for GET/DELETE and 201 for POST/PUT/PATCH, so a wrong status is a real failure and not a guess). That loop is what found every defect worth finding here - the wrong bind port, the duplicated `uses`, the missing `TRESTDWAuthBasic` alias, the `var String` mismatch.
 
 Those demos come in two shapes and both must pass: `SimpleServer` is RDW 1.4.3 (`var Result: String`, `Routes = [crAll]`) and `FileTransfer` is RDW 2.1 (`const Result: TStringList`, `Routes.All`). Both work against the same installed package - see *Two handler shapes* below. The converter reports each rename it makes.
 
@@ -291,8 +291,8 @@ the cache is unreachable from a descendant. `TRALRESTDWClientSQL` counts them it
 - **RAL's memtable cannot be opened without a connection, so `OpenJson` does not work.**
   `TRALDBFDMemTable.SetActive` raises *Connection not set* when `RALConnection` is nil and
   goes to the server when it is not; there is no local path, and `CreateDataSet` needs one.
-  RDW's `OpenJson` is purely local - parse a JSON an API returned and show it - which is
-  what the `ConsultaCNPJ` demo does. The fix is one line in PascalRAL: in the nil-connection
+  RDW's `OpenJson` is purely local - parse a JSON an API returned and show it. The fix is one
+  line in PascalRAL: in the nil-connection
   branch of `SetActive`, call `inherited` instead of raising. Until then `OpenJson` raises a
   message naming the cause rather than passing RAL's along. Do not "fix" it here by
   assigning a throwaway connection - that reaches the server and comes back 404, which was

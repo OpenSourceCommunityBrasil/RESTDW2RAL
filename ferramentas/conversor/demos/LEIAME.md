@@ -1,6 +1,6 @@
 # Demos do REST Dataware, sem conversão
 
-Cópias das demos oficiais do RDW (`CORE/demos/Delphi/VCL`), **intactas quanto à
+Cópias de demos oficiais do RDW (`CORE/demos/Delphi/VCL`), **intactas quanto à
 conversão**: nenhuma classe foi trocada, nenhum `uses` foi mexido. Elas estão aqui para
 serem convertidas por quem quiser testar o caminho inteiro — da conversão ao programa
 rodando — sem precisar caçar o repositório do RDW.
@@ -19,7 +19,6 @@ Pela janela: abra `rdw2ralgui.exe`, arraste a pasta da demo, escolha o motor do 
 | `FileTransfer` | servidor + cliente, porta 8082 | basic auth montada em código, lista/download/upload de arquivo |
 | `FullServer` | servidor grande, porta 8082 | pooler de banco, driver FireDAC, contexto, token, massive |
 | `FullClient` | cliente completo | eventos, banco sobre REST, massive cache, failover, bearer |
-| `ConsultaCNPJ` | cliente REST cru | `Get` numa API externa e `OpenJson` |
 
 ## O que muda quando você converte
 
@@ -82,15 +81,6 @@ Os campos de `PACIENTES` são exatamente os `FieldDefs` que o `TRESTDWClientSQL`
 | `SimpleServer` | sim | sim | 200 no GET e DELETE, 201 no POST/PUT/PATCH, 404 em rota inexistente |
 | `FileTransfer` | sim | sim | lista, baixa e envia arquivo, conteúdo idêntico dos dois lados |
 | `FullServer` + `FullClient` | sim | sim | eventos (`helloworld`, `servertime`) e banco (select, ExecSQL, ApplyUpdates gravando no Firebird) |
-| `ConsultaCNPJ` | sim | sim | **não**: `OpenJson` depende de abrir um dataset sem servidor, e o `TRALDBFDMemTable` do PascalRAL não permite (ver abaixo) |
-
-### O que falta para o ConsultaCNPJ
-
-`TRALDBFDMemTable.SetActive` levanta *Connection not set* quando `RALConnection` é nil, e
-quando não é vai buscar os dados no servidor — não existe caminho para abrir um dataset
-local. `OpenJson` precisa exatamente disso. A correção é no PascalRAL, no ramo de conexão
-nula do `SetActive`: chamar o `inherited` em vez de levantar. Enquanto isso não muda, o
-`OpenJson` daqui levanta uma mensagem dizendo isso, em vez do erro cru do RAL.
 
 ## Detalhes de build
 

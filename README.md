@@ -38,7 +38,7 @@ assinatura** ficam idênticos.
 - [Conversor de projetos](#conversor-de-projetos)
 - [Autorização](#autorização)
 - [De/Para: RDW → RESTDW2RAL](#depara-rdw--restdw2ral)
-- [Diretiva RDW143](#diretiva-rdw143)
+- [As duas gerações de handler](#as-duas-gerações-de-handler)
 - [Demos](#demos)
 - [Limitações conhecidas](#limitações-conhecidas)
 - [Licença](#licença)
@@ -543,8 +543,8 @@ O que ele faz é pouco, de propósito, porque as cascas fazem o resto:
 - acrescenta `RegisterClass(TSeuDataModule)`, que é como o módulo acha a classe;
 - converte o formato antigo de `Routes = [crAll]` para `Routes.All.Active`, que é a
   forma do RDW 2.1 e a daqui;
-- avisa quando o projeto usa a assinatura do RDW 1.4.3 (`var Result: String`), que pede
-  a diretiva `RDW143`;
+- aponta cada handler para a propriedade da assinatura que ele tem, `OnReplyEvent` ou
+  `OnReplyEventStr`, e relata cada troca;
 - avisa, um a um, os componentes sem equivalente (`TRESTDWPoolerDB`,
   `TRESTDWIdDatabase`, `TRESTDWMassiveCache`, `TRESTDWServerContext`…).
 
@@ -627,23 +627,28 @@ para isso que ela existe. Ela também re-exporta `StringRAL`, `IntegerRAL` e `In
 > caractere; o `String` do Delphi moderno tem dois. Em parâmetro `var` o compilador não
 > converte, e no caso dos handlers ligados pelo DFM — que casam por nome, sem conferir
 > assinatura — nem erro daria: daria texto corrompido na primeira chamada. Por isso
-> `SendEvent(..., var AError)`, `OnAuthRequest` e o `Result` do `RDW143` usam `String`,
+> `SendEvent(..., var AError)`, `OnAuthRequest` e o `Result` do `OnReplyEventStr` usam `String`,
 > exatamente como o RDW declara.
 
 ---
 
-## Diretiva `RDW143`
+## As duas gerações de handler
 
-`src/RALRESTDW.inc` escolhe a assinatura do handler, conforme a versão de RDW de onde você
-vem:
+O RDW 2.x entrega o resultado do evento num `TStringList` e o 1.4.3 numa `string`. Você não
+escolhe: **as duas formas ficam publicadas**, com nomes diferentes, e o mesmo pacote
+instalado atende projetos das duas gerações.
 
-| | `OnReplyEvent` | Equivale a |
+| propriedade | assinatura | vem do |
 | --- | --- | --- |
-| **padrão** | `(var AParams: TRALRESTDWParams; const AResult: TStringList)` | RDW 2.x |
-| **`{$DEFINE RDW143}`** | `(var AParams: TRALRESTDWParams; var AResult: StringRAL)` | RDW 1.4.3 |
+| `OnReplyEvent` | `(var AParams: TRALRESTDWParams; const AResult: TStringList)` | RDW 2.x |
+| `OnReplyEventStr` | `(var AParams: TRALRESTDWParams; var AResult: String)` | RDW 1.4.3 |
 
-Mudar a diretiva muda um tipo publicado: todos os handlers já ligados nos DFM/LFM quebram e
-o pacote precisa ser reinstalado. Decida no começo.
+O conversor aponta o `.dfm` para a certa, **handler a handler** — e isso importa: a demo
+`FullServer` do RDW tem handlers das duas formas lado a lado no mesmo `.pas`. Vale a que
+estiver ligada.
+
+> Isto já foi a diretiva `RDW143` em `src/RALRESTDW.inc`, que obrigava a escolher uma forma
+> por pacote instalado. O arquivo continua lá, vazio, porque as units o incluem.
 
 ---
 
@@ -717,23 +722,21 @@ servidor e depois o cliente. O servidor loga as rotas que descobriu sozinho:
 
 ### O que já foi verificado em demo real do RDW
 
-As seis demos oficiais do REST Dataware, convertidas e compiladas contra o RAL:
+As demos oficiais do REST Dataware que acompanham este repositório, em
+`ferramentas/conversor/demos/` — sem conversão, para você mesmo converter e rodar:
 
 | demo | o que exercita | resultado |
 | --- | --- | --- |
-| `SimpleServer` | servidor, formato RDW 1.4.3 | converte, compila e **responde**: GET/DELETE 200, POST/PUT/PATCH 201, rota inexistente 404 |
-| `FileTransfer/Server` | servidor, formato RDW 2.1, `TRESTDWAuthBasic` | converte e compila |
-| `FileTransfer/Client` | cliente com basic auth montada em código | converte e compila |
-| `FullServer` | servidor grande: pooler de banco, driver FireDAC, contexto, token, massive | converte e compila |
-| `FullClient` | cliente com banco sobre REST, massive cache, failover, bearer | converte e compila |
-| `ConsultaCNPJ` | cliente REST cru: `Get` numa API externa e `OpenJson` | converte e compila |
+| `SimpleServer` | servidor, handler na forma do RDW 1.4.3 | converte, compila e **responde**: GET/DELETE 200, POST/PUT/PATCH 201, rota inexistente 404 |
+| `FileTransfer/Server` + `Client` | basic auth montada em código, transferência de arquivo | converte, compila e **transfere**: lista, baixa e envia, conteúdo idêntico dos dois lados |
+| `FullServer` | servidor grande: pooler de banco, driver FireDAC, contexto, token, massive | converte, compila e **serve** eventos e banco |
+| `FullClient` | cliente com banco sobre REST, massive cache, failover, bearer | converte, compila e **conversa** com o FullServer: eventos e banco, com ApplyUpdates gravando no Firebird |
 
 Em todas, a única mudança no formulário foi o **nome da classe**: nenhuma propriedade do
 RDW foi alterada ou descartada.
 
-Nos dois compiladores: Delphi 12 (units com e sem `RDW143`, os três pacotes contra o
-`.dcp` instalado, as seis demos) e Lazarus 3 / FPC 3.2.2 (os três pacotes e a demo
-cliente).
+Nos dois compiladores: Delphi 12 (os três pacotes contra o `.dcp` instalado, com range
+check ligado, e as demos) e Lazarus 3 / FPC 3.2.2 (os três pacotes e a demo cliente).
 
 ---
 
