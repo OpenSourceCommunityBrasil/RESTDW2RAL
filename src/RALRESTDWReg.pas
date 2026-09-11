@@ -1,3 +1,4 @@
+/// Design-time registration: palette, component editors and property editors.
 unit RALRESTDWReg;
 
 interface
@@ -14,18 +15,24 @@ uses
 type
   { TRALRESTDWServerEventsList }
 
+  /// Fills ServerEventName by asking the server which components it exposes
   TRALRESTDWServerEventsList = class(TStringProperty)
   public
     function GetAttributes: TPropertyAttributes; override;
     procedure GetValues(Proc: TGetStrProc); override;
   end;
 
+  { TRALRESTDWMenu }
+
+  /// Shared base: marks the form as modified, which neither editor used to do
+  TRALRESTDWMenu = Class(TComponentEditor)
+  protected
+    procedure MarkModified;
+  end;
+
   { TRALRESTDWClientEventsMenu }
 
-  TRALRESTDWClientEventsMenu = Class(TComponentEditor)
-  protected
-    /// marca o form como alterado; sem isso o trabalho do verbo se perde
-    procedure MarkModified;
+  TRALRESTDWClientEventsMenu = Class(TRALRESTDWMenu)
   public
     function GetVerbCount: Integer; override;
     function GetVerb(AIndex : Integer): string; override;
@@ -34,10 +41,7 @@ type
 
   { TRALRESTDWModulesMenu }
 
-  TRALRESTDWModulesMenu = Class(TComponentEditor)
-  protected
-    /// marca o form como alterado; sem isso o trabalho do verbo se perde
-    procedure MarkModified;
+  TRALRESTDWModulesMenu = Class(TRALRESTDWMenu)
   public
     function GetVerbCount: Integer; override;
     function GetVerb(AIndex : Integer): string; override;
@@ -56,12 +60,11 @@ begin
 
   RegisterComponentEditor(TRALRESTDWModule, TRALRESTDWModulesMenu);
   RegisterComponentEditor(TRALRESTDWClientEvents, TRALRESTDWClientEventsMenu);
-  RegisterPropertyEditor(TypeInfo(StringRAL), TRALRESTDWClientEvents, 'ServerEventName', TRALRESTDWServerEventsList);
+  RegisterPropertyEditor(TypeInfo(StringRAL), TRALRESTDWClientEvents,
+                         'ServerEventName', TRALRESTDWServerEventsList);
 end;
 
-
-
-{ TRALRESTServerEventsList }
+{ TRALRESTDWServerEventsList }
 
 function TRALRESTDWServerEventsList.GetAttributes: TPropertyAttributes;
 begin
@@ -96,9 +99,9 @@ begin
   end;
 end;
 
-{ TRALRESTDWClientEventsMenu }
+{ TRALRESTDWMenu }
 
-procedure TRALRESTDWClientEventsMenu.MarkModified;
+procedure TRALRESTDWMenu.MarkModified;
 begin
   {$IFDEF FPC}
     Modified;
@@ -108,9 +111,11 @@ begin
   {$ENDIF}
 end;
 
+{ TRALRESTDWClientEventsMenu }
+
 function TRALRESTDWClientEventsMenu.GetVerbCount: Integer;
 begin
-  Result := 1;
+  Result := 2;
 end;
 
 function TRALRESTDWClientEventsMenu.GetVerb(AIndex: Integer): string;
@@ -118,53 +123,44 @@ begin
   Result := '';
   case AIndex of
     0 : Result := 'Get Events';
+    1 : Result := 'Clear Events';
   end;
 end;
 
 procedure TRALRESTDWClientEventsMenu.ExecuteVerb(AIndex: Integer);
 var
   vClient: TRALRESTDWClientEvents;
-  vStream: TStream;
 begin
+  vClient := TRALRESTDWClientEvents(GetComponent);
+  if vClient = nil then
+    Exit;
+
   case AIndex of
     0 : begin
-      vClient := TRALRESTDWClientEvents(GetComponent);
-      if vClient <> nil then
-      begin
-        vStream := vClient.GetEvents;
-        try
-          vClient.SetEvents(vStream);
+          vClient.FetchEvents;
           MarkModified;
-        finally
-          FreeAndNil(vStream);
         end;
-      end;
-    end;
+    1 : begin
+          vClient.ClearEvents;
+          MarkModified;
+        end;
   end;
 end;
 
 { TRALRESTDWModulesMenu }
 
-procedure TRALRESTDWModulesMenu.MarkModified;
-begin
-  {$IFDEF FPC}
-    Modified;
-  {$ELSE}
-    if Designer <> nil then
-      Designer.Modified;
-  {$ENDIF}
-end;
-
 function TRALRESTDWModulesMenu.GetVerbCount: Integer;
 begin
-  Result := 1;
+  Result := 3;
 end;
 
 function TRALRESTDWModulesMenu.GetVerb(AIndex: Integer): string;
 begin
   Result := '';
   case AIndex of
-    0 : Result := 'Import Events';
+    0 : Result := 'Refresh Routes';
+    1 : Result := 'Export Events';
+    2 : Result := 'Import Events';
   end;
 end;
 
@@ -172,19 +168,41 @@ procedure TRALRESTDWModulesMenu.ExecuteVerb(AIndex: Integer);
 var
   vModule: TRALRESTDWModule;
 begin
+  vModule := TRALRESTDWModule(GetComponent);
+  if vModule = nil then
+    Exit;
+
   case AIndex of
     0 : begin
-      vModule := TRALRESTDWModule(GetComponent);
-      if vModule <> nil then
-      begin
-        if not FileExists(vModule.FileExporter) then
-          raise Exception.CreateFmt('Arquivo de eventos nao encontrado: "%s"',
-                                    [vModule.FileExporter]);
+          { le a classe de ClassModule e republica as rotas. E o mesmo que o
+            modulo faz sozinho com AutoRoutes ligado - o verbo existe para
+            conferir o resultado sem rodar o servidor }
+          if Trim(vModule.ClassModule) = '' then
+            raise Exception.Create('ClassModule nao informado');
 
-        vModule.ImportFromFile(vModule.FileExporter);
-        MarkModified;
-      end;
-    end;
+          vModule.RefreshRoutes;
+          if vModule.Routes.Count = 0 then
+            raise Exception.CreateFmt(
+              'Nenhum evento encontrado em "%s". A classe esta registrada com ' +
+              'RegisterClass e a unit dela esta no uses do projeto?',
+              [vModule.ClassModule]);
+
+          MarkModified;
+        end;
+    1 : begin
+          if Trim(vModule.FileExporter) = '' then
+            raise Exception.Create('FileExporter nao informado');
+
+          vModule.ExportToFile;
+        end;
+    2 : begin
+          if not FileExists(vModule.FileExporter) then
+            raise Exception.CreateFmt('Arquivo de eventos nao encontrado: "%s"',
+                                      [vModule.FileExporter]);
+
+          vModule.ImportFromFile;
+          MarkModified;
+        end;
   end;
 end;
 

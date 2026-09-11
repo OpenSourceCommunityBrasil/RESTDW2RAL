@@ -1,0 +1,69 @@
+object Form1: TForm1
+  Left = 350
+  Height = 340
+  Top = 250
+  Width = 560
+  Caption = 'RESTDW2RAL - cliente da demo (Lazarus)'
+  ClientHeight = 340
+  ClientWidth = 560
+  object mLog: TMemo
+    Left = 8
+    Height = 280
+    Top = 48
+    Width = 544
+    ReadOnly = True
+    ScrollBars = ssAutoBoth
+    TabOrder = 0
+  end
+  object btPing: TButton
+    Left = 8
+    Height = 29
+    Top = 10
+    Width = 92
+    Caption = '1. ping'
+    OnClick = btPingClick
+    TabOrder = 1
+  end
+  object btSoma: TButton
+    Left = 106
+    Height = 29
+    Top = 10
+    Width = 92
+    Caption = '2. soma'
+    OnClick = btSomaClick
+    TabOrder = 2
+  end
+  object btCadastro: TButton
+    Left = 204
+    Height = 29
+    Top = 10
+    Width = 92
+    Caption = '3. cadastro'
+    OnClick = btCadastroClick
+    TabOrder = 3
+  end
+  object btLista: TButton
+    Left = 302
+    Height = 29
+    Top = 10
+    Width = 92
+    Caption = 'listar'
+    OnClick = btListaClick
+    TabOrder = 4
+  end
+  object cliente: TRALClient
+    BaseURL.Strings = (
+      'localhost:8000'
+    )
+    EngineType = 'fpHTTP'
+    Left = 496
+    Top = 12
+  end
+  object ce: TRALRESTDWClientEvents
+    Events = <>
+    ModuleRoute = '/'
+    RALClient = cliente
+    Left = 432
+    Top = 12
+  end
+end

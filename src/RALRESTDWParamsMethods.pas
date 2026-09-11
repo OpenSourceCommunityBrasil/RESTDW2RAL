@@ -1,3 +1,7 @@
+/// Design-time declaration of an event's parameters.
+///
+/// This is the collection you fill in the Object Inspector; at request time it
+/// is cloned into the runtime TRALRESTDWParams the handler receives.
 unit RALRESTDWParamsMethods;
 
 interface
@@ -14,6 +18,7 @@ type
     FTypeObject: TRALRESTDWTypeObject;
     FObjectDirection: TRALRESTDWObjectDirection;
     FObjectValue: TRALRESTDWObjectValue;
+    FDataMode: TRALRESTDWDataMode;
     FAlias: StringRAL;
     FDefaultValue: StringRAL;
     FParamName: StringRAL;
@@ -31,6 +36,7 @@ type
     property TypeObject: TRALRESTDWTypeObject read FTypeObject write FTypeObject;
     property ObjectDirection: TRALRESTDWObjectDirection read FObjectDirection write FObjectDirection;
     property ObjectValue: TRALRESTDWObjectValue read FObjectValue write FObjectValue;
+    property DataMode: TRALRESTDWDataMode read FDataMode write FDataMode;
     property Alias: StringRAL read FAlias write FAlias;
     property DefaultValue: StringRAL read FDefaultValue write FDefaultValue;
     property ParamName: StringRAL read FParamName write FParamName;
@@ -42,11 +48,23 @@ type
   TRALRESTDWParamsMethods = class(TOwnedCollection)
   private
     function GetParamByName(AName: StringRAL): TRALRESTDWParamMethod;
+    function GetParam(AIndex: IntegerRAL): TRALRESTDWParamMethod;
   public
     constructor Create(AOwner: TPersistent);
 
-    procedure CreateParams(AParam : TRALRESTDWParams);
+    /// Declares a param in code, the RDW AddParam shape
+    function AddParam(const AParamName: StringRAL;
+                      AObjectValue: TRALRESTDWObjectValue = ovString;
+                      AObjectDirection: TRALRESTDWObjectDirection = odINOUT;
+                      const ADefaultValue: StringRAL = '';
+                      ATypeObject: TRALRESTDWTypeObject = toParam): TRALRESTDWParamMethod;
 
+    /// Clones every declared param into the runtime container
+    procedure CreateParams(AParam : TRALRESTDWParams);
+    /// True when AName was declared here (used by OnlyPreDefinedParams)
+    function Declared(const AName: StringRAL): boolean;
+
+    property Items[AIndex: IntegerRAL]: TRALRESTDWParamMethod read GetParam; default;
     property ParamByName[AName: StringRAL]: TRALRESTDWParamMethod Read GetParamByName;
   end;
 
@@ -59,16 +77,36 @@ begin
   inherited Create(AOwner, TRALRESTDWParamMethod);
 end;
 
+function TRALRESTDWParamsMethods.AddParam(const AParamName: StringRAL;
+  AObjectValue: TRALRESTDWObjectValue; AObjectDirection: TRALRESTDWObjectDirection;
+  const ADefaultValue: StringRAL; ATypeObject: TRALRESTDWTypeObject): TRALRESTDWParamMethod;
+begin
+  Result := TRALRESTDWParamMethod(Add);
+  Result.ParamName := AParamName;
+  Result.ObjectValue := AObjectValue;
+  Result.ObjectDirection := AObjectDirection;
+  Result.DefaultValue := ADefaultValue;
+  Result.TypeObject := ATypeObject;
+end;
+
 procedure TRALRESTDWParamsMethods.CreateParams(AParam: TRALRESTDWParams);
 var
   vInt1: IntegerRAL;
-  vParamMethod: TRALRESTDWParamMethod;
 begin
   for vInt1 := 0 to Pred(Count) do
-  begin
-    vParamMethod := TRALRESTDWParamMethod(Items[vInt1]);
-    AParam.NewParam.Assign(vParamMethod);
-  end;
+    AParam.NewParam.Assign(TRALRESTDWParamMethod(inherited Items[vInt1]));
+end;
+
+function TRALRESTDWParamsMethods.Declared(const AName: StringRAL): boolean;
+begin
+  Result := GetParamByName(AName) <> nil;
+end;
+
+function TRALRESTDWParamsMethods.GetParam(AIndex: IntegerRAL): TRALRESTDWParamMethod;
+begin
+  Result := nil;
+  if (AIndex >= 0) and (AIndex < Count) then
+    Result := TRALRESTDWParamMethod(inherited Items[AIndex]);
 end;
 
 function TRALRESTDWParamsMethods.GetParamByName(AName: StringRAL): TRALRESTDWParamMethod;
@@ -79,8 +117,9 @@ begin
   Result := nil;
   for vInt1 := 0 to Pred(Count) do
   begin
-    vParam := TRALRESTDWParamMethod(Items[vInt1]);
-    if SameText(vParam.ParamName, AName) then
+    vParam := TRALRESTDWParamMethod(inherited Items[vInt1]);
+    if (SameText(vParam.ParamName, AName)) or
+       ((vParam.Alias <> '') and (SameText(vParam.Alias, AName))) then
     begin
       Result := vParam;
       Break;
@@ -97,6 +136,7 @@ begin
   FTypeObject := toParam;
   FObjectDirection := odINOUT;
   FObjectValue := ovString;
+  FDataMode := dmRAW;
 end;
 
 function TRALRESTDWParamMethod.GetDisplayName: string;
@@ -130,14 +170,16 @@ begin
   begin
     with ADest as TRALRESTDWJSONParam do
     begin
-      // AsString carimba ObjectValue := ovString, entao o valor vai antes do tipo
-      AsString := Self.DefaultValue;
       TypeObject := Self.TypeObject;
       ObjectDirection := Self.ObjectDirection;
       ObjectValue := Self.ObjectValue;
+      DataMode := Self.DataMode;
       ParamName := Self.ParamName;
       Alias := Self.Alias;
       Encoded := Self.Encoded;
+      { SetValue instead of AsString: every SetAs* stamps its own type, so the
+        old code flattened the declared ObjectValue to ovString right here }
+      SetValue(Self.DefaultValue);
     end;
   end
   else if ADest.InheritsFrom(TRALRESTDWParamMethod) then
@@ -147,13 +189,17 @@ begin
       TypeObject := Self.TypeObject;
       ObjectDirection := Self.ObjectDirection;
       ObjectValue := Self.ObjectValue;
+      DataMode := Self.DataMode;
       ParamName := Self.ParamName;
       Alias := Self.Alias;
       DefaultValue := Self.DefaultValue;
       Encoded := Self.Encoded;
     end;
+  end
+  else
+  begin
+    inherited AssignTo(ADest);
   end;
 end;
 
 end.
-

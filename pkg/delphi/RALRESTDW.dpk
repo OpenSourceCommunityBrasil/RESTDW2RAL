@@ -40,6 +40,7 @@ contains
   RALRESTDWServerEvents in '..\..\src\RALRESTDWServerEvents.pas',
   RALRESTDWTypes in '..\..\src\RALRESTDWTypes.pas',
   RALRESTDWClientEvents in '..\..\src\RALRESTDWClientEvents.pas',
-  RALRESTDWEvents in '..\..\src\RALRESTDWEvents.pas';
+  RALRESTDWEvents in '..\..\src\RALRESTDWEvents.pas',
+  RALRESTDWCompat in '..\..\src\RALRESTDWCompat.pas';
 
 end.

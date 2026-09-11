@@ -4,35 +4,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A **porting layer** — the README calls it "um pequeno adaptador para converter projetos RESTDW para RAL". It reimplements the REST Dataware (RESTDW) *ServerEvents/ClientEvents* programming model on top of PascalRAL, so an existing RESTDW project moves over by swapping components whose properties, collections and handler signatures line up with the originals: `TRESTDWServerEvents` → `TRALRESTDWServerEvents`, `TRESTDWParams.ItemsString['x'].AsString` → `TRALRESTDWParams.ItemsString['x'].AsString`, the `cUndefined` (`'undefined'`) body param, the `Events` collection with `BaseURL`/`EventName`/`Params`. When in doubt about why a member exists, look it up in `../RDW/branch/dev/CORE/Source/Basic/uRESTDW*.pas` — the shape is copied from there deliberately.
+**RESTDW2RAL** lets a REST Dataware project move to PascalRAL without rewriting its code. It reimplements RDW's *ServerEvents/ClientEvents* programming model on top of RAL, with **no RDW unit linked in**: property names, collection shapes, handler signatures and the `As*` accessors are copied from RDW deliberately, so the body of an existing handler compiles and behaves the same. `src/RALRESTDWCompat.pas` closes the last gap by aliasing the RDW type names (and re-declaring the enum *values*, since Pascal has no transitive exports).
 
-It is an IDE component package, not an application: no `main`, **no test suite and no CI** (`.github/` holds only `FUNDING.yml`). Eight units in `src/`, one package per compiler, a Delphi server + Lazarus client pair under `exemplo/`.
+Both halves matter equally: the server side (`TRALRESTDWModule` + `TRALRESTDWServerEvents`) and the client side (`TRALRESTDWClientEvents`). A change that only serves one of them is half a change.
 
-**`../PascalRAL` is a sibling checkout with its own `CLAUDE.md`.** Read it for anything on the RAL side: the `StringRAL`/`IntegerRAL` aliases, `{$IFDEF FPC}@{$ENDIF}` on method-pointer arguments, `FixRoute`, `TRALParams`, `TRALModuleRoutes`, and the msbuild/`dcc32` recipes. This repo follows those conventions and adds no compiler plumbing of its own beyond `src/RALRESTDW.inc`.
+It is an IDE component package, not an application: no `main`, **no test suite and no CI** (`.github/` holds only `FUNDING.yml`). Nine units in `src/`, one package per compiler, demos under `exemplo/`.
+
+**Reference checkouts, all sibling directories, all read-only — never edit them:**
+- `../PascalRAL` — the RAL we build against (branch `dev`). Has its own `CLAUDE.md`; read it for `StringRAL`/`IntegerRAL`, `{$IFDEF FPC}@{$ENDIF}` on method pointers, `FixRoute`, `TRALParams`, typed params, `TRALModuleRoutes`, and the compiler recipes.
+- `../RDW_Phoenix` — REST Dataware 2.1 (`OpenSourceCommunityBrasil/REST-DataWare`). The authority on what a member should be called and do. `CORE/Source/Basic/uRESTDW{Params,ServerEvents}.pas` and `CORE/Source/Consts/uRESTDWConsts.pas` carry almost all of it.
+- `../RDW` — an older RDW checkout, useful only for what the `RDW143` directive selects.
 
 ## Build / verify
 
-There is nothing to run as a test. Verification is: compile the package, then run the two examples against each other.
+There is nothing to run as a test. Verification is: compile the package, compile the demos, then run the demos against each other.
 
-Install order matters — `RALRESTDW` requires `PascalRALDsgn`, which requires `PascalRAL` + `designide`:
+Install order — `RALRESTDW` requires `PascalRALDsgn`, which requires `PascalRAL` + `designide`:
 
 ```powershell
-# Delphi, from an rsvars.bat-initialized shell. If msbuild dies with
-# MSB6003 / "dcc could not be run", see ../PascalRAL/CLAUDE.md - it is the
-# DelphiLibraryPath length problem, not this package.
 msbuild ..\PascalRAL\pkg\Delphi\PascalRAL.dproj     /t:Build /p:Config=Release /p:Platform=Win32
 msbuild ..\PascalRAL\pkg\Delphi\PascalRALDsgn.dproj /t:Build /p:Config=Release /p:Platform=Win32
 msbuild pkg\delphi\RALRESTDW.dproj                  /t:Build /p:Config=Release /p:Platform=Win32
 
-# Lazarus - RunAndDesignTime package, so installing it rebuilds the IDE
 lazbuild --build-ide= pkg\lazarus\RALRESTDW.lpk
 ```
 
-Neither of those needs to run to check a source change. The units compile straight against the
-sibling PascalRAL checkout, which is the fast way to know an edit is sound (verified on Delphi 12,
-Athens 23.0). Write a throwaway `chk.dpr` outside the repo whose `uses` names the seven runtime
-units, and give `dcc32` the source paths — Windows-form paths, since Git Bash mangles `/c/...`
-arguments into something the compiler rejects:
+If msbuild dies with `MSB6003` / "dcc could not be run", see `../PascalRAL/CLAUDE.md` — it is the `DelphiLibraryPath` length problem, not this package.
+
+### Checking a source change without installing anything
+
+The units compile straight against the sibling PascalRAL checkout, which is the fast loop (verified on Delphi 12, Athens 23.0). Write a throwaway `chk.dpr` outside the repo whose `uses` names the eight runtime units, and give `dcc32` the source paths — Windows-form paths, since Git Bash mangles a `/c/...` argument into something the compiler rejects:
 
 ```powershell
 $bds = "C:\Program Files (x86)\Embarcadero\Studio\23.0"
@@ -40,96 +41,106 @@ $ral = "<repo>\..\PascalRAL\src"
 $u = "$bds\lib\win32\release;$ral\base;$ral\base\plugins;$ral\base\modules;$ral\utils;$ral\database;<repo>\src"
 $i = "$ral\base;$ral\languages;$ral\utils;<repo>\src"
 & "$bds\bin\dcc32.exe" --no-config -B -Q `
-  -NS"System;System.Win;Winapi;Vcl;Data;Data.Win;Xml;Web;Soap;Datasnap" `
+  -NS"System;System.Win;Winapi;Vcl;Data;Data.Win;Xml;Web;Soap;Datasnap;FireDAC" `
   -U"$u" -I"$i" -N0"<out>" -E"<out>" chk.dpr
 ```
 
-`RALRESTDWReg.pas` needs the design-time packages on top of that — a second `chk2.dpr` that uses
-only it, plus `-LU"rtl;designide"` (`designide.dcp` lives in `$bds\lib\win32\release`, which is
-already on the `-U` path; there is no `DesignIntf.dcu` to find).
+`RALRESTDWReg.pas` needs the design-time packages on top of that — a second `chk2.dpr` using only it, plus `-LU"rtl;designide"` (`designide.dcp` is in `$bds\lib\win32\release`, already on the `-U` path; there is no `DesignIntf.dcu` to find). The demos add one engine path each (`$ral\engine\indy`, `$ral\engine\netHTTP`) and need a generated `.res` — `brcc32 -fo<name>.res` over a one-line `.rc` written **without a BOM** (`Set-Content -Encoding ascii`; brcc32 rejects a UTF-8 BOM with "Bad character in source input").
 
-Expected noise, all of it pre-existing: `W1057` implicit string casts by the hundred (PascalRAL's
-own, see its `CLAUDE.md`), one `W1055` on `TRALRESTDWParams` for the `published` block on a plain
-`TObject`, and one `H2164` for a dead `vStream` in `TRALRESTDWJSONParam.AssignTo`. Anything else
-is yours.
+Expected noise, all pre-existing: `W1057` implicit string casts by the hundred (PascalRAL's own), one `W1055` on `TRALRESTDWParams` for the `published` block on a plain `TObject`. Anything else is yours.
 
-One package per compiler holds **both** the runtime units and `RALRESTDWReg.pas` (which uses `DesignIntf`/`PropEdits`), so it can only be installed design-time; consuming applications compile `src/` through their own unit search path. A new unit has to be added in four places or one compiler silently misses it: `pkg/delphi/RALRESTDW.dpk` (`contains`), the `.dproj` `<DCCReference>` list, `pkg/lazarus/RALRESTDW.lpk` (`<Files>`), and the Lazarus-generated `pkg/lazarus/RALRESTDW.pas`.
+### End-to-end
 
-End-to-end check: run `exemplo/delphi` (a `TRALSynopseServer` + `TRALRESTDWModule`, so `SynopseRAL` and madExcept must be installed) and click the button in `exemplo/lazarus/client` (needs `IndyRAL` + `RALRESTDW`). That path exercises bootstrap, dispatch and the params round-trip in one go: the `ping` event declares `nome`/`valor` as `odINOUT`, so the client gets them echoed back alongside the `cUndefined` body.
-
-Component glyphs: Delphi reads `pkg/delphi/RALRESTDW.dcr`, regenerated by `assets/src/_gerardcr.bat` (brcc32 over `RALRESTDW.rc` → the `.bmp` files; the script hardcodes two candidate brcc32 paths); Lazarus reads `pkg/lazarus/RALRESTDW.lrs` (the `.png` files), included by `RALRESTDWReg.pas` under `{$IFDEF FPC}`. Palettes: `RAL - RDWModule` for the two events components, `RAL - Modules` for the module.
+`exemplo/delphi/servidor` + `exemplo/delphi/cliente` exercise every feature. For an automated pass, a console harness that drives `TRALRESTDWClientEvents` against the running server covers discovery, typed params, datasets, per-event auth and the failure paths in one run — that is how the current behaviour was validated (19 checks, all green).
 
 ## Architecture
 
-### Server side, request by request
+### Server: the module discovers the events
 
 `TRALRESTDWModule` (`src/RALRESTDWModule.pas`) is a `TRALModuleRoutes` attached to a `TRALServer`. It owns two route collections:
 
-- `FRDWRoutes`, built in the constructor: `getevents` and `getservereventslist` (POST + OPTIONS) — the two endpoints the *client* designer calls.
-- the inherited `Routes`, one route per RESTDW event. These are not written by hand: they come from the binary export file, at design time through the component-editor verb *Import Events* or at runtime through `ImportFromFile`/`ImportFromStream`. They keep the default `AllowedMethods = [amALL]`, which is why the client can pick any verb via `TRALRESTDWSendEvent`.
+- `FRDWRoutes`, built in the constructor: `getevents` and `getservereventslist` (POST + OPTIONS), the two endpoints the client uses to mirror the server.
+- the inherited `Routes`, one per RDW event.
 
-Every route in `Routes` ends in one handler, `ReplyRoutes`. `BindRoutes` wires them — from `Loaded` for routes streamed out of the DFM, and at creation time for imported ones — so the request path does not write to shared route objects; `CanAnswerRoute` only fills in a route added by code after `Loaded`. `GetListRoutes` is overridden to append `FRDWRoutes`, which is what the Swagger/Postman exporters in PascalRAL walk.
+**`AutoRoutes` (default `True`) is the feature that removes the manual step.** `AutoBuildRoutes` runs from `Loaded` and from `SetServer`, instantiates `ClassModule` once, walks its `TRALRESTDWServerEvents` components and calls `AddEventRoute` per event — which maps `Routes.AllowedMethods`/`SkipAuthMethods`, `CallbackEvent` and the IN params onto the `TRALRoute`. Hand-made or imported routes win: `AutoBuildRoutes` bails out when `Routes.Count > 0`, so it never overwrites what a developer wrote. `RefreshRoutes` is the public rebuild, also exposed as the *Refresh Routes* component-editor verb.
 
-`ReplyRoutes`, `GetEvents` and `GetServerEventsList` share the same four steps:
+Every route in `Routes` ends in `ReplyRoutes`. `BindRoutes` wires them from `Loaded` and at creation time, so the request path does not write to shared route objects; `CanAnswerRoute` only fills in a route added by code afterwards.
 
-1. `AResponse.Answer(403)` up front. Everything below only *replaces* it, so **a 403 out of this module almost always means "class not registered" or "name/AccessTag did not match", not an authentication failure.**
-2. `GetClass(ClassModule)` resolves the data module class. `ClassModule` is a *string* going through the RTL class registry, so the data module unit must call `RegisterClass(Tdm_xxx)` in its `initialization` (`exemplo/delphi/udm_restdw.pas` shows it).
-3. `CreateModuleObject` → `vClass.Create(nil)` — **a fresh data module per request**, freed in a `finally`, so event handlers are stateless. The owner is deliberately `nil`: the module's component list is shared across request threads and `TComponent.InsertComponent`/`RemoveComponent` have no lock. The handler still reaches the module through `TRALRESTDWParams.Module`, which is what `Create(Self)` used to be for (commit d3b941c).
-4. Walk the data module's `Components` for `TRALRESTDWServerEvents`, match `servereventname` against `'<ClassName>.<ComponentName>'`, compare `AccessTag`, then `CanAnswerEvent` picks the event and `TRALRESTDWEventServer.ReplyEvent` runs the user handler.
+`ReplyRoutes`, `GetEvents` and `GetServerEventsList` share a shape:
 
-`AccessTag` is the whole access-control story: the guard repeated in all three handlers reduces to "the component's `AccessTag` must equal the one sent in the request", both-empty included. It is a plain case-sensitive compare of a body param — a namespacing device, not a credential. Real auth belongs on the `TRALServer`.
+1. `AResponse.Answer(HTTP_Forbidden)` up front. Everything below only *replaces* it, so **a 403 from this module means "class not registered" or "AccessTag did not match", not an auth failure.**
+2. `CreateModuleObject` → `vClass.Create(nil)` — a fresh data module per request, freed in a `finally`, so handlers are stateless. Owner is deliberately `nil`: the module's component list is shared across request threads and `TComponent.InsertComponent`/`RemoveComponent` have no lock. The handler reaches the module through `TRALRESTDWParams.Module`.
+3. `DoCreate` fires the component's `OnCreate` once per instance — the per-request hook RDW users expect.
+4. `TRALRESTDWServerEvents.ExecuteEvent` resolves the event (by route, then `DefaultEvent`) and runs `ReplyEvent` with the component's `IgnoreInvalidParams`.
 
-### Client side
+**`servereventname` is a hint, not a filter.** `ReplyRoutes` reads it by name; when absent it tries the body (see the lone-param trap below) and only keeps the value if it matches a component. Otherwise it dispatches by route across every component — which is what makes the events callable from `curl`, JavaScript or any non-Delphi client with no knowledge of RDW conventions.
 
-`TRALRESTDWClientEvents` (`src/RALRESTDWClientEvents.pas`) keeps a local copy of the event definitions and needs a `TRALClient` engine in `RALClient`. Bootstrap is a design-time step:
+### Client: the mirror fills itself
 
-1. The `ServerEventName` property editor (`RALRESTDWReg.pas`) POSTs to `<ModuleRoute>/getservereventslist` and offers the `|`-separated names the server answers with.
-2. The component-editor verb *Get Events* POSTs to `<ModuleRoute>/getevents` and feeds the binary answer to `SetEvents`, filling the `Events` collection.
+`TRALRESTDWClientEvents` (`src/RALRESTDWClientEvents.pas`) keeps a local copy of the event definitions and needs a `TRALClient` in `RALClient`. `GetEvents` is a published **Boolean** property (RDW parity — setting it True fetches); the stream-returning method is `FetchEventsStream`, and `FetchEvents` does fetch-and-apply.
 
-At runtime it is `CreateDWParams('event', params)` → set values → `SendEvent('event', params, err)`. The response body param `cUndefined` plus every OUT param are read back into the *same* params object.
+**`AutoFetch` (default `True`)** makes `FindEvent` pull the definitions the first time an unknown event is asked for, so a working client needs no design-time step either. `FFetched` is set *before* the network call so a failure cannot turn into one attempt per call.
 
-### The params bridge
+### Params: RDW shape, typed wire
 
-`TRALRESTDWParams` / `TRALRESTDWJSONParam` (`src/RALRESTDWParams.pas`) is the RESTDW-shaped façade over `TRALParams`. Each param stores its value in a `TStream`; the `As*` properties convert in and out of it and stamp `ObjectValue`. `ObjectDirection` decides the direction of every copy:
+`TRALRESTDWParams` / `TRALRESTDWJSONParam` (`src/RALRESTDWParams.pas`) is the RDW-shaped façade over `TRALParams`. The value lives in a `TStream`; `ObjectDirection` decides the direction of every copy:
 
 | | IN / INOUT | OUT / INOUT |
 | --- | --- | --- |
-| server | `AssignRequest` (pull from request) | `AppendResponse` (push into response body) |
-| client | `AppendRequest` (push as `rpkBODY`) | `AssignResponse` (read back) |
+| server | `AssignRequest` | `AppendResponse` |
+| client | `AppendRequest` | `AssignResponse` |
 
-`TRALRESTDWParamsMethods` / `TRALRESTDWParamMethod` (`src/RALRESTDWParamsMethods.pas`) are the *design-time* declaration of those same params — the `Params` collection on an event — and `CreateParams`/`AssignTo` clone them into runtime `TRALRESTDWJSONParam`s. `RALRESTDWTypes.pas` holds the enums copied from RESTDW (`TRALRESTDWObjectValue` mirrors `TFieldType`) plus `ObjectValueToRouteParamType`, which is how a declared param type becomes a RAL route param type on import.
+Two things are worth knowing before editing this unit:
 
-### Two binary formats, four places
+- **`StoreText`/`StoreStream` write the payload without touching `ObjectValue`.** Every public `SetAs*` stamps the type it just wrote, which is right when the application says "this is an integer" and wrong for the paths that only carry a value across — cloning a declared param, reading the wire, applying a `DefaultValue`. Those used to flatten every declared type to `ovString`. Use `StoreText`/`SetValue` on any new copy path.
+- **`WriteToRALParam`/`ReadFromRALParam` are the only places that touch the wire.** They map `ObjectValue` → `TRALParamType` (`ObjectValueToParamType`) and use RAL's `SetTypedInteger/Int64/Double/Currency/Boolean/DateTime`, so numbers and dates travel as little-endian binary and never pass through `FloatToStr`. Text and binary have no typed form and travel as the stream. Where a value *must* become text (JSON, `AsString`), `RALRESTDWTypes` supplies invariant conversions — `RALRESTDWFloatToStr`, `RALRESTDWDateTimeToStr` and friends. Adding an `As*` that formats with the local settings reintroduces the locale bug.
 
-Both are `TRALBinaryWriter` (PascalRAL `RALStream.pas`, which both reads and writes), and they are **not** the same layout. Each has exactly one writer and one reader; change them together.
+`toDataset` is served by `LoadFromDataSet`/`SaveToDataSet` over `TRALStorageBINLink`, the same storage `TRALDBModule` uses.
 
-| format | written by | read by | carries |
+### Two binary formats, both versioned
+
+Both use `TRALBinaryWriter` and both start with a signature and a version, because without them a mismatched pair read the next field as a length prefix and died with "stream announces more bytes than it holds".
+
+| format | constants | written by | read by |
 | --- | --- | --- | --- |
-| live event list | `TRALRESTDWServerEvents.GetEvents` | `TRALRESTDWClientEvents.SetEvents` | one component's events — BaseURL, ContentType, EventName, then every param field (Alias, DefaultValue, Encoded, ParamName, Direction, ValueType, TypeObject) |
-| route export | `TRALRESTDWModule.ExportToStream` → `TRALRESTDWServerEvents.ExportEvents` | `TRALRESTDWModule.ImportFromStream` | every server-events component of the module class — EventName, full route, Description, then ParamName + ValueType only |
+| live event list | `cEventsSignature`/`cEventsVersion` (`RALRESTDWTypes`) | `TRALRESTDWServerEvents.GetEvents` | `TRALRESTDWClientEvents.SetEvents` |
+| route export | `cExportSignature`/`cExportVersion` (in `RALRESTDWModule`) | `ExportToStream` → `ExportEvents` | `ImportFromStream` |
 
-The route export (`FileExporter`) exists so the module can publish real `TRALRoute`s with `InputParams` without the data module being instantiated, which is what makes the events visible to Swagger/Postman.
+Bump the version whenever a field moves. The export exists so routes can be published without instantiating the data module; with `AutoRoutes` it is a fallback, not the main path.
 
-### `RDW143` — which RESTDW you are porting *from*
+### `RDW143`
 
-`src/RALRESTDW.inc` holds the only conditional in the project, shipped commented out. It selects the published event signature:
+`src/RALRESTDW.inc` is the only conditional. Undefined (default) gives the RDW 2.x handler shape `(var AParams; const AResult: TStringList)`; `{$DEFINE RDW143}` gives the 1.4.3 shape `(var AParams; var AResult: StringRAL)`. `RALRESTDWEvents.pas` is the only unit that branches on it. Flipping it changes a published type: every wired DFM/LFM breaks and the package must be rebuilt.
 
-- undefined (default) → `(AParams: TRALRESTDWParams; const AResult: TStringList)`, matching **RESTDW 2.0** (`Const Result: TStringList`).
-- `{$DEFINE RDW143}` → `(AParams: TRALRESTDWParams; var AResult: StringRAL)`, matching **RESTDW 1.4.3** (`Var Result: String`).
+### Where things live
 
-`RALRESTDWEvents.pas` is the only unit that branches on it, in the type declarations and in `ReplyEvent`. Flipping it changes a published type: every DFM/LFM already wired to a handler breaks, and the package must be rebuilt.
+| unit | what for |
+| --- | --- |
+| `RALRESTDWTypes` | the RDW enums, the `ObjectValue` → RAL/field-type maps, the invariant text conversions, the stream signature |
+| `RALRESTDWParams` | runtime params, the wire, JSON, datasets, the `TParam` bridge |
+| `RALRESTDWParamsMethods` | design-time param declaration, cloned into the runtime container |
+| `RALRESTDWEvents` | the event items, `TRALRESTDWRoutes` (verbs), `ReplyEvent` |
+| `RALRESTDWServerEvents` | the server component, `ExecuteEvent`, the two serializers |
+| `RALRESTDWClientEvents` | the client component |
+| `RALRESTDWModule` | route discovery, dispatch, export/import |
+| `RALRESTDWCompat` | RDW type and enum names, plus the `StringRAL`/`IntegerRAL` aliases |
+| `RALRESTDWReg` | palette, component editors, property editor |
 
 ## Traps
 
-- **Do not subclass `TRALRESTDWServerEvents`.** `TRALRESTDWEventList.Create` chooses its item class by comparing `AOwner.ClassName` to the literal `'TRALRESTDWServerEvents'`; a descendant silently gets `TRALRESTDWEventBase` items (no `OnReplyEvent`), which `GetEvents` and `CanAnswerEvent` then hard-cast to `TRALRESTDWEventServer`.
-- **`CreateDWParams` allocates and the caller owns the object.** It sets the `var` argument to `nil` first, so an unknown event name is detectable — but nothing frees it for you, and `exemplo/lazarus/client` still does not.
-- **`AsString` stamps `ObjectValue := ovString`**, like every other `As*` setter. Anything that copies a declared param has to write the value *before* the type — `TRALRESTDWParamMethod.AssignTo` and `CreateDWParams` both do now, and a new copy path has to remember.
-- **`OnlyPreDefinedParams` is published and never enforced**, and `toDataset`/`toMassive` exist in `TRALRESTDWTypeObject` with no implementation behind them. Dataset-carrying RDW events have no equivalent here yet.
-- **The RDW surface is not complete.** `TRALRESTDWParams` has no `RawBody`, `Clear`, `Delete`, `Add`, `CreateParam`, `ToJSON`/`FromJSON`, `LoadFromParams`; the param has no `Value: Variant`; the event has no `Routes`, `DataMode`, `CallbackEvent`, `OnAuthRequest`; the component has no `IgnoreInvalidParams`, `DefaultEvent`, `OnCreate`. `OnReplyEvent` and `SendEvent` also take the params **without `var`**, where RDW takes `var`. The README's *Limitações conhecidas* is the user-facing version of this list.
-- **`exemplo/delphi` still carries a `TRESTDWServerEvents` next to the RAL one** (side-by-side migration, so it needs the RDW package installed), and its `.dproj` `DCC_UsePackage` list is the author's entire IDE package set — not this project's dependencies.
+- **A lone body param travels without its name.** PascalRAL's `EncodeBody` skips multipart when there is exactly one body param and sends the raw value; the name arrives as `ral_body`. This bit both directions — `getevents` sends only `servereventname` when `AccessTag` is empty, and a handler returning just text answers with only `cUndefined`. Both sides now read in two steps (by name, then `Body`). Its own `CLAUDE.md` says not to "fix" this in RAL, so any new param that can travel alone needs the same two-step read.
+- **`ItemsString['x']` returns nil** when the param is not there — same as RDW, deliberately. Every new consumer needs the nil check.
+- **Do not subclass `TRALRESTDWServerEvents` without passing the item class.** `TRALRESTDWEventList.Create` takes `AItemClass` now; it used to pick it by comparing the owner's class *name* with a literal, which silently gave a descendant items with no handlers.
+- **`CreateDWParams` allocates and the caller owns the object.** It nils the `var` first, so an unknown event is detectable, but nothing frees it for you.
+- **The data module is created per request.** Anything expensive in its `OnCreate` runs on every call. That is the RDW semantic, and it is what makes handlers thread-safe.
+- **`exemplo/lazarus/cliente` has not been compiled.** Only the Delphi side was validated.
 
 ## Repo conventions
 
-Code and comments are in English (there are two `///` comments in the whole tree). Commit messages are in Portuguese and every line is a `- ` bullet — the first bullet *is* the subject, there is no subject/body split and no Conventional Commits. Work happens on `dev`; `main` is the release branch, the same split PascalRAL uses. Naming follows PascalRAL: `F` fields, `A` arguments, `v` locals (`vInt1`, `vEvent`).
+Code and `///` comments are in English; the comments that explain a decision inside a method are in Portuguese, matching the commit language. Commit messages are in Portuguese and every line is a `- ` bullet — the first bullet *is* the subject, there is no subject/body split and no Conventional Commits. Work happens on `dev`; `main` is the release branch. Remote is `OpenSourceCommunityBrasil/RESTDW2RAL`. Naming follows PascalRAL: `F` fields, `A` arguments, `v` locals.
 
-There is no `.gitignore`, no `.gitattributes`, no hooks and no CI, so build leftovers (`Win32/`, `*.dcu`, `__history/`, Lazarus `lib/`) surface as untracked and have to be kept out of a commit by hand. Every tracked file is CRLF, `.md` included — `sed -i` and `perl -pi` under Git Bash write LF back and turn the diff into the whole file, so normalize before committing. There is no Python on this machine; `perl` is the scripting tool that works.
+There is no `.gitignore`, no `.gitattributes`, no hooks and no CI, so build leftovers (`Win32/`, `*.dcu`, `__history/`, Lazarus `lib/`, generated `.res`) surface as untracked and have to be kept out of a commit by hand. Every tracked file is CRLF, `.md` included — `sed -i` and `perl -pi` under Git Bash write LF back and turn the diff into the whole file, so normalize before committing. There is no Python on this machine; `perl` is the scripting tool that works.
+
+A new unit has to be registered in four places or one compiler silently misses it: `pkg/delphi/RALRESTDW.dpk` (`contains`), the `.dproj` `<DCCReference>` list, `pkg/lazarus/RALRESTDW.lpk` (`<Files>`), and the Lazarus-generated `pkg/lazarus/RALRESTDW.pas`.
+
+Component glyphs: Delphi reads `pkg/delphi/RALRESTDW.dcr`, regenerated by `assets/src/_gerardcr.bat`; Lazarus reads `pkg/lazarus/RALRESTDW.lrs`, included by `RALRESTDWReg.pas` under `{$IFDEF FPC}`.

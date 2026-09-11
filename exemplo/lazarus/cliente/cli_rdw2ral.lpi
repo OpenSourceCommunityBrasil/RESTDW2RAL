@@ -4,15 +4,15 @@
     <Version Value="12"/>
     <PathDelim Value="\"/>
     <General>
+      <Flags>
+        <MainUnitHasCreateFormStatements Value="False"/>
+        <MainUnitHasTitleStatement Value="False"/>
+        <MainUnitHasScaledStatement Value="False"/>
+      </Flags>
       <SessionStorage Value="InProjectDir"/>
-      <Title Value="ralrestdw_client"/>
-      <Scaled Value="True"/>
+      <Title Value="cli_rdw2ral"/>
+      <UseAppBundle Value="False"/>
       <ResourceType Value="res"/>
-      <UseXPManifest Value="True"/>
-      <XPManifest>
-        <DpiAware Value="True"/>
-      </XPManifest>
-      <Icon Value="0"/>
     </General>
     <BuildModes>
       <Item Name="Default" Default="True"/>
@@ -21,12 +21,9 @@
       <Version Value="2"/>
       <UseFileFilters Value="True"/>
     </PublishOptions>
-    <RunParams>
-      <FormatVersion Value="2"/>
-    </RunParams>
     <RequiredPackages>
       <Item>
-        <PackageName Value="IndyRAL"/>
+        <PackageName Value="fpHttpRAL"/>
       </Item>
       <Item>
         <PackageName Value="RALRESTDW"/>
@@ -37,7 +34,7 @@
     </RequiredPackages>
     <Units>
       <Unit>
-        <Filename Value="ralrestdw_client.lpr"/>
+        <Filename Value="cli_rdw2ral.lpr"/>
         <IsPartOfProject Value="True"/>
       </Unit>
       <Unit>
@@ -53,11 +50,10 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <Target>
-      <Filename Value="ralrestdw_client"/>
+      <Filename Value="cli_rdw2ral"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Linking>
       <Debugging>
@@ -70,17 +66,4 @@
       </Options>
     </Linking>
   </CompilerOptions>
-  <Debugging>
-    <Exceptions>
-      <Item>
-        <Name Value="EAbort"/>
-      </Item>
-      <Item>
-        <Name Value="ECodetoolError"/>
-      </Item>
-      <Item>
-        <Name Value="EFOpenError"/>
-      </Item>
-    </Exceptions>
-  </Debugging>
 </CONFIG>

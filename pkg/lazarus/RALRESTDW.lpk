@@ -51,6 +51,10 @@
         <Filename Value="..\..\src\RALRESTDWEvents.pas"/>
         <UnitName Value="RALRESTDWEvents"/>
       </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWCompat.pas"/>
+        <UnitName Value="RALRESTDWCompat"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

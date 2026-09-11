@@ -1,11 +1,15 @@
+/// The RDW-shaped parameter container, over PascalRAL's TRALParams.
+///
+/// The public surface mirrors REST Dataware's TRESTDWParams/TRESTDWJSONParam so
+/// that the body of an existing event handler compiles and behaves the same.
 unit RALRESTDWParams;
 
 interface
 
 uses
-  Classes, SysUtils, Variants, TypInfo,
+  Classes, SysUtils, Variants, TypInfo, DB,
   RALTypes, RALRESTDWTypes, RALRequest, RALResponse, RALParams, RALJson,
-  RALBase64, RALStream;
+  RALBase64, RALStream, RALStorage, RALStorageBIN;
 
 type
 
@@ -18,10 +22,24 @@ type
     FObjectValue: TRALRESTDWObjectValue;
     FParamName: StringRAL;
     FAlias: StringRAL;
+    FParamFileName: StringRAL;
+    FParamContentType: StringRAL;
+    FFloatDecimalFormat: StringRAL;
+    FDataMode: TRALRESTDWDataMode;
+    FDefaultValue: Variant;
     FValue: TStream;
     FEncoded: boolean;
   protected
     procedure AssignTo(ADest: TPersistent); override;
+
+    { Writes the payload without touching ObjectValue.
+
+      Every SetAs* stamps the type it just wrote - which is right when the
+      application says "this is an integer", and wrong for the paths that only
+      carry a value across (cloning a declared param, reading the wire, applying
+      a DefaultValue): those used to flatten the declared type to ovString. }
+    procedure StoreText(const AValue: StringRAL);
+    procedure StoreStream(AStream: TStream);
 
     function GetAsStream: TStream;
     function GetAsBase64 : StringRAL;
@@ -40,6 +58,8 @@ type
     function GetAsWideString: WideString;
     function GetAsWord: word;
     function GetByteString: string;
+    function GetBinary: boolean;
+    function GetVariantValue: Variant;
     procedure SetAsStream(const AValue: TStream);
     procedure SetAsAnsiString(AValue: AnsiString);
     procedure SetAsBCD(AValue: currency);
@@ -61,27 +81,65 @@ type
     procedure SetAsWideString(AValue: wideString);
     procedure SetAsWord(AValue: word);
     procedure SetAsBase64(AValue: StringRAL);
+    procedure SetVariantValue(const AValue: Variant);
   public
     constructor Create;
     destructor Destroy; override;
 
+    procedure Clear;
+
     function ToJSONObject: TRALJSONObject;
     function ToJSON: StringRAL;
+    procedure FromJSON(const AJSON: StringRAL);
 
     procedure SaveToStream(AStream: TStream); overload;
     function SaveToStream : TStream; overload;
     procedure LoadFromStream(AStream: TStream);
+    procedure SaveToFile(const AFileName: StringRAL);
+    procedure LoadFromFile(const AFileName: StringRAL);
+
+    { Sets the payload and keeps the declared ObjectValue - the RDW SetValue }
+    procedure SetValue(const AValue: StringRAL); overload;
+    procedure SetValue(AValue: TStream); overload;
+
+    procedure CopyFrom(ASource: TRALRESTDWJSONParam);
+
+    /// TParam bridge, so a handler can feed a query straight from a param
+    procedure LoadFromParam(AParam: TParam);
+    procedure SaveFromParam(AParam: TParam);
+
+    { Dataset payload (TypeObject = toDataset).
+
+      Serialized with PascalRAL's own storage (BIN), which is what TRALDBModule
+      uses, so the bytes are readable by any RAL dataset consumer. }
+    procedure LoadFromDataSet(ADataSet: TDataSet);
+    procedure SaveToDataSet(ADataSet: TDataSet);
+
+    /// Writes this param into a RAL param, typed when the declared type has a
+    /// binary form. Text and binary payloads travel as a stream, as before.
+    procedure WriteToRALParam(AParam: TRALParam);
+    /// Reads a RAL param back into this one, honouring the typed marker
+    procedure ReadFromRALParam(AParam: TRALParam);
 
     function IsNull : Boolean;
     function IsEmpty : Boolean;
+    function TestNilParam : Boolean;
+    function Size : Int64;
   published
     property TypeObject: TRALRESTDWTypeObject read FTypeObject write FTypeObject;
     property ObjectDirection: TRALRESTDWObjectDirection read FObjectDirection write FObjectDirection;
     property ObjectValue: TRALRESTDWObjectValue read FObjectValue write FObjectValue;
     property ParamName: StringRAL read FParamName write FParamName;
     property Alias: StringRAL read FAlias write FAlias;
+    property ParamFileName: StringRAL read FParamFileName write FParamFileName;
+    property ParamContentType: StringRAL read FParamContentType write FParamContentType;
+    property FloatDecimalFormat: StringRAL read FFloatDecimalFormat write FFloatDecimalFormat;
+    property DataMode: TRALRESTDWDataMode read FDataMode write FDataMode;
     property Encoded: boolean read FEncoded write FEncoded;
-    property Value: TStream read FValue;
+    property Binary: boolean read GetBinary;
+    property Value: Variant read GetVariantValue write SetVariantValue;
+    property DefaultValue: Variant read FDefaultValue write FDefaultValue;
+    property Content: TStream read FValue;
 
     property AsBCD: currency read GetAsBCD write SetAsBCD;
     property AsFMTBCD: currency read GetAsFMTBCD write SetAsFMTBCD;
@@ -116,11 +174,13 @@ type
     FParams: TList;
     FRequest: TRALRequest;
     FModule: TComponent;
+    FDataMode: TRALRESTDWDataMode;
   protected
     procedure ClearParams;
 
     function GetParamIndex(AIndex: IntegerRAL): TRALRESTDWJSONParam;
     function GetParamName(AName: StringRAL): TRALRESTDWJSONParam;
+    function GetRawBody: TRALRESTDWJSONParam;
     procedure SetParamIndex(AIndex: IntegerRAL; AValue: TRALRESTDWJSONParam);
     procedure SetParamName(AName: StringRAL; AValue: TRALRESTDWJSONParam);
   public
@@ -129,6 +189,30 @@ type
 
     function Count: integer;
     function NewParam: TRALRESTDWJSONParam;
+    /// Creates (or reuses) a param by name - the RDW CreateParam
+    function CreateParam(const AParamName: StringRAL;
+                         const AValue: StringRAL = ''): TRALRESTDWJSONParam;
+    function Add(AItem: TRALRESTDWJSONParam): IntegerRAL;
+    procedure Delete(AIndex: IntegerRAL); overload;
+    procedure Delete(AParam: TRALRESTDWJSONParam); overload;
+    procedure Clear;
+    procedure CopyFrom(AParams: TRALRESTDWParams);
+
+    function IndexOf(const AName: StringRAL): IntegerRAL;
+    function CountInParams: IntegerRAL;
+    function CountOutParams: IntegerRAL;
+    /// True when at least one param comes back from the server
+    function ParamsReturn: boolean;
+
+    function ToJSON: StringRAL;
+    procedure FromJSON(const AJSON: StringRAL);
+    procedure SaveToFile(const AFileName: StringRAL);
+    procedure LoadFromFile(const AFileName: StringRAL);
+
+    /// Fills the container from a dataset/query TParams collection
+    procedure LoadFromParams(AParams: TParams);
+    /// And back, so a handler can hand the values straight to a query
+    procedure SaveToParams(AParams: TParams);
 
     procedure AssignRequest(ARequest: TRALRequest);
     procedure AppendRequest(ARequest: TRALRequest);
@@ -136,16 +220,71 @@ type
     procedure AssignResponse(AResponse: TRALResponse);
     procedure AppendResponse(AResponse: TRALResponse);
 
-    property Items[AIndex: IntegerRAL]: TRALRESTDWJSONParam read GetParamIndex write SetParamIndex;
+    property Items[AIndex: IntegerRAL]: TRALRESTDWJSONParam read GetParamIndex write SetParamIndex; default;
     property ItemsString[AName: StringRAL]: TRALRESTDWJSONParam read GetParamName write SetParamName;
-  published
+    /// The lone body param - what a handler's Result travelled as
+    property RawBody: TRALRESTDWJSONParam read GetRawBody;
+    /// The raw request being answered, for header, IP, cookie and the like
     property Request : TRALRequest read FRequest write FRequest;
+    { The TRALRESTDWModule that dispatched this call. Typed as TComponent to
+      keep this unit independent of the module; cast it when you need Server. }
     property Module : TComponent read FModule write FModule;
+    property DataMode: TRALRESTDWDataMode read FDataMode write FDataMode;
   end;
 
 implementation
 
 { TRALRESTDWJSONParam }
+
+constructor TRALRESTDWJSONParam.Create;
+begin
+  inherited Create;
+  FObjectDirection := odINOUT;
+  FTypeObject := toParam;
+  FEncoded := False;
+  FObjectValue := ovString;
+  FDataMode := dmRAW;
+  FDefaultValue := Null;
+  FValue := nil;
+end;
+
+destructor TRALRESTDWJSONParam.Destroy;
+begin
+  FreeAndNil(FValue);
+  inherited;
+end;
+
+procedure TRALRESTDWJSONParam.Clear;
+begin
+  FreeAndNil(FValue);
+end;
+
+procedure TRALRESTDWJSONParam.StoreText(const AValue: StringRAL);
+begin
+  FreeAndNil(FValue);
+  FValue := StringToStreamUTF8(AValue);
+end;
+
+procedure TRALRESTDWJSONParam.StoreStream(AStream: TStream);
+begin
+  FreeAndNil(FValue);
+  if AStream = nil then
+    Exit;
+
+  AStream.Position := 0;
+  FValue := TRALStringStream.Create(AStream);
+  FValue.Position := 0;
+end;
+
+procedure TRALRESTDWJSONParam.SetValue(const AValue: StringRAL);
+begin
+  StoreText(AValue);
+end;
+
+procedure TRALRESTDWJSONParam.SetValue(AValue: TStream);
+begin
+  StoreStream(AValue);
+end;
 
 function TRALRESTDWJSONParam.GetAsAnsiString: ansistring;
 begin
@@ -154,7 +293,7 @@ end;
 
 function TRALRESTDWJSONParam.GetAsBCD: currency;
 begin
-  Result := StrToCurrDef(StreamToString(FValue), 0);
+  Result := RALRESTDWStrToCurr(StreamToString(FValue), 0);
 end;
 
 function TRALRESTDWJSONParam.GetAsBoolean: boolean;
@@ -167,22 +306,22 @@ end;
 
 function TRALRESTDWJSONParam.GetAsCurrency: currency;
 begin
-  Result := StrToCurrDef(StreamToString(FValue), 0);
+  Result := RALRESTDWStrToCurr(StreamToString(FValue), 0);
 end;
 
 function TRALRESTDWJSONParam.GetAsDateTime: TDateTime;
 begin
-  Result := StrToFloatDef(StreamToString(FValue), 0);
+  Result := RALRESTDWStrToDateTime(StreamToString(FValue), 0);
 end;
 
 function TRALRESTDWJSONParam.GetAsFloat: double;
 begin
-  Result := StrToFloatDef(StreamToString(FValue), 0);
+  Result := RALRESTDWStrToFloat(StreamToString(FValue), 0);
 end;
 
 function TRALRESTDWJSONParam.GetAsFMTBCD: currency;
 begin
-  Result := StrToCurrDef(StreamToString(FValue), 0);
+  Result := RALRESTDWStrToCurr(StreamToString(FValue), 0);
 end;
 
 function TRALRESTDWJSONParam.GetAsInteger: integer;
@@ -202,7 +341,7 @@ end;
 
 function TRALRESTDWJSONParam.GetAsSingle: single;
 begin
-  Result := StrToFloatDef(StreamToString(FValue), 0);
+  Result := RALRESTDWStrToFloat(StreamToString(FValue), 0);
 end;
 
 function TRALRESTDWJSONParam.GetAsStream: TStream;
@@ -230,6 +369,53 @@ begin
   Result := StreamToString(FValue);
 end;
 
+function TRALRESTDWJSONParam.GetBinary: boolean;
+begin
+  Result := ObjectValueIsBinary(FObjectValue);
+end;
+
+function TRALRESTDWJSONParam.GetVariantValue: Variant;
+begin
+  if IsNull then
+  begin
+    Result := Null;
+    Exit;
+  end;
+
+  case ObjectValueToParamType(FObjectValue) of
+    rptInteger  : Result := GetAsInteger;
+    rptInt64    : Result := GetAsLargeInt;
+    rptDouble   : Result := GetAsFloat;
+    rptCurrency : Result := GetAsCurrency;
+    rptBoolean  : Result := GetAsBoolean;
+    rptDateTime : Result := GetAsDateTime;
+    else
+      Result := GetAsString;
+  end;
+end;
+
+procedure TRALRESTDWJSONParam.SetVariantValue(const AValue: Variant);
+begin
+  if VarIsNull(AValue) or VarIsEmpty(AValue) then
+  begin
+    Clear;
+    Exit;
+  end;
+
+  { the declared type wins: a param declared ovFloat fed an integer Variant
+    still has to keep its type, or the wire format changes per call }
+  case ObjectValueToParamType(FObjectValue) of
+    rptInteger  : StoreText(IntToStr(AValue));
+    rptInt64    : StoreText(IntToStr(Int64(AValue)));
+    rptDouble   : StoreText(RALRESTDWFloatToStr(AValue));
+    rptCurrency : StoreText(RALRESTDWCurrToStr(AValue));
+    rptBoolean  : StoreText(BooleanToString(AValue));
+    rptDateTime : StoreText(RALRESTDWDateTimeToStr(VarToDateTime(AValue)));
+    else
+      StoreText(StringRAL(VarToStr(AValue)));
+  end;
+end;
+
 function TRALRESTDWJSONParam.IsEmpty: Boolean;
 begin
   Result := (FValue <> nil) and (FValue.Size = 0);
@@ -240,17 +426,22 @@ begin
   Result := FValue = nil;
 end;
 
+function TRALRESTDWJSONParam.TestNilParam: Boolean;
+begin
+  Result := (Self = nil) or (FValue = nil);
+end;
+
+function TRALRESTDWJSONParam.Size: Int64;
+begin
+  Result := 0;
+  if FValue <> nil then
+    Result := FValue.Size;
+end;
+
 procedure TRALRESTDWJSONParam.LoadFromStream(AStream: TStream);
 begin
   FObjectValue := ovStream;
-
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  AStream.Position := 0;
-
-  FValue := TRALStringStream.Create(AStream);
-  FValue.Position := 0;
+  StoreStream(AStream);
 end;
 
 procedure TRALRESTDWJSONParam.SaveToStream(AStream: TStream);
@@ -270,139 +461,118 @@ begin
   Result.Position := 0;
 end;
 
+procedure TRALRESTDWJSONParam.SaveToFile(const AFileName: StringRAL);
+var
+  vStream: TFileStream;
+begin
+  vStream := TFileStream.Create(AFileName, fmCreate);
+  try
+    SaveToStream(vStream);
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+procedure TRALRESTDWJSONParam.LoadFromFile(const AFileName: StringRAL);
+var
+  vStream: TFileStream;
+begin
+  vStream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    StoreStream(vStream);
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
 procedure TRALRESTDWJSONParam.SetAsAnsiString(AValue: ansistring);
 begin
   FObjectValue := ovString;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(AValue);
+  StoreText(AValue);
 end;
 
 procedure TRALRESTDWJSONParam.SetAsBCD(AValue: currency);
 begin
   FObjectValue := ovBCD;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(CurrToStr(AValue));
+  StoreText(RALRESTDWCurrToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsBoolean(AValue: boolean);
 begin
   FObjectValue := ovBoolean;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(BooleanToString(AValue));
+  StoreText(BooleanToString(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsCurrency(AValue: currency);
 begin
   FObjectValue := ovCurrency;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(CurrToStr(AValue));
+  StoreText(RALRESTDWCurrToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsDate(AValue: TDateTime);
 begin
   FObjectValue := ovDate;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(DateToStr(AValue));
+  StoreText(RALRESTDWDateTimeToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsDateTime(AValue: TDateTime);
 begin
   FObjectValue := ovDateTime;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(DateTimeToStr(AValue));
+  StoreText(RALRESTDWDateTimeToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsFloat(AValue: double);
 begin
   FObjectValue := ovFloat;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(FloatToStr(AValue));
+  StoreText(RALRESTDWFloatToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsFMTBCD(AValue: currency);
 begin
   FObjectValue := ovFMTBcd;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(CurrToStr(AValue));
+  StoreText(RALRESTDWCurrToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsInteger(AValue: integer);
 begin
   FObjectValue := ovInteger;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(IntToStr(AValue));
+  StoreText(IntToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsLargeInt(AValue: Int64);
 begin
   FObjectValue := ovLargeint;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(IntToStr(AValue));
+  StoreText(IntToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsLongWord(AValue: longword);
 begin
   FObjectValue := ovLongWord;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(IntToStr(AValue));
+  StoreText(IntToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsObject(AValue: string);
 begin
   FObjectValue := ovObject;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(AValue);
+  StoreText(AValue);
 end;
 
 procedure TRALRESTDWJSONParam.SetAsShortInt(AValue: integer);
 begin
   FObjectValue := ovShortint;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(IntToStr(AValue));
+  StoreText(IntToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsSingle(AValue: single);
 begin
   FObjectValue := ovSingle;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(FloatToStr(AValue));
+  StoreText(RALRESTDWFloatToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsSmallInt(AValue: integer);
 begin
   FObjectValue := ovSmallint;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(IntToStr(AValue));
+  StoreText(IntToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsStream(const AValue: TStream);
@@ -413,38 +583,25 @@ end;
 procedure TRALRESTDWJSONParam.SetAsString(AValue: string);
 begin
   FObjectValue := ovString;
-
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(AValue);
+  StoreText(AValue);
 end;
 
 procedure TRALRESTDWJSONParam.SetAsTime(AValue: TDateTime);
 begin
   FObjectValue := ovTime;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(TimeToStr(AValue));
+  StoreText(RALRESTDWDateTimeToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsWideString(AValue: wideString);
 begin
   FObjectValue := ovWideString;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(AValue);
+  StoreText(StringRAL(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsWord(AValue: word);
 begin
   FObjectValue := ovWord;
-  if FValue <> nil then
-    FreeAndNil(FValue);
-
-  FValue := StringToStreamUTF8(IntToStr(AValue));
+  StoreText(IntToStr(AValue));
 end;
 
 procedure TRALRESTDWJSONParam.SetAsBase64(AValue: StringRAL);
@@ -452,20 +609,126 @@ begin
   SetAsString(TRALBase64.Decode(AValue));
 end;
 
-constructor TRALRESTDWJSONParam.Create;
+function TRALRESTDWJSONParam.GetAsBase64: StringRAL;
 begin
-  inherited Create;
-  FObjectDirection := odINOUT;
-  FTypeObject := toParam;
-  FEncoded := False;
-  FObjectValue := ovString;
-  FValue := nil;
+  Result := TRALBase64.Encode(GetAsString);
 end;
 
-destructor TRALRESTDWJSONParam.Destroy;
+procedure TRALRESTDWJSONParam.LoadFromParam(AParam: TParam);
 begin
-  FreeAndNil(FValue);
-  inherited;
+  if AParam = nil then
+    Exit;
+
+  FParamName := StringRAL(AParam.Name);
+  FObjectValue := FieldTypeToObjectValue(AParam.DataType);
+  if AParam.IsNull then
+    Clear
+  else
+    SetVariantValue(AParam.Value);
+end;
+
+procedure TRALRESTDWJSONParam.SaveFromParam(AParam: TParam);
+begin
+  if AParam = nil then
+    Exit;
+
+  AParam.Name := String(FParamName);
+  AParam.DataType := ObjectValueToFieldType(FObjectValue);
+  if IsNull then
+    AParam.Clear
+  else
+    AParam.Value := GetVariantValue;
+end;
+
+procedure TRALRESTDWJSONParam.LoadFromDataSet(ADataSet: TDataSet);
+var
+  vLink: TRALStorageBINLink;
+  vStream: TMemoryStream;
+begin
+  FTypeObject := toDataset;
+  FObjectValue := ovDataSet;
+
+  vStream := TMemoryStream.Create;
+  try
+    vLink := TRALStorageBINLink.Create(nil);
+    try
+      vLink.SaveToStream(ADataSet, vStream);
+    finally
+      FreeAndNil(vLink);
+    end;
+    StoreStream(vStream);
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+procedure TRALRESTDWJSONParam.SaveToDataSet(ADataSet: TDataSet);
+var
+  vLink: TRALStorageBINLink;
+begin
+  if IsNull then
+    Exit;
+
+  FValue.Position := 0;
+  vLink := TRALStorageBINLink.Create(nil);
+  try
+    vLink.LoadFromStream(ADataSet, FValue);
+  finally
+    FreeAndNil(vLink);
+    FValue.Position := 0;
+  end;
+end;
+
+procedure TRALRESTDWJSONParam.WriteToRALParam(AParam: TRALParam);
+begin
+  if AParam = nil then
+    Exit;
+
+  if IsNull then
+  begin
+    AParam.AsString := '';
+    Exit;
+  end;
+
+  { A typed payload keeps the exact value and does not depend on either side's
+    locale, which is what used to break floats and dates between machines. Text
+    and binary have no typed form and travel as the stream, exactly as before. }
+  case ObjectValueToParamType(FObjectValue) of
+    rptInteger  : AParam.SetTypedInteger(GetAsInteger);
+    rptInt64    : AParam.SetTypedInt64(GetAsLargeInt);
+    rptDouble   : AParam.SetTypedDouble(GetAsFloat);
+    rptCurrency : AParam.SetTypedCurrency(GetAsCurrency);
+    rptBoolean  : AParam.SetTypedBoolean(GetAsBoolean);
+    rptDateTime : AParam.SetTypedDateTime(GetAsDateTime);
+    else
+      AParam.AsStream := FValue;
+  end;
+end;
+
+procedure TRALRESTDWJSONParam.ReadFromRALParam(AParam: TRALParam);
+begin
+  if AParam = nil then
+    Exit;
+
+  if AParam.IsTyped then
+  begin
+    { the RAL getters read whichever typed payload arrived and convert, so a
+      declared type that disagrees with the sender still lands correctly }
+    case ObjectValueToParamType(FObjectValue) of
+      rptInteger  : StoreText(IntToStr(AParam.AsInteger));
+      rptInt64    : StoreText(IntToStr(AParam.AsInt64));
+      rptDouble   : StoreText(RALRESTDWFloatToStr(AParam.AsDouble));
+      rptCurrency : StoreText(RALRESTDWCurrToStr(AParam.AsCurrency));
+      rptBoolean  : StoreText(BooleanToString(AParam.AsBoolean));
+      rptDateTime : StoreText(RALRESTDWDateTimeToStr(AParam.AsDateTime));
+      else
+        StoreStream(AParam.Content);
+    end;
+  end
+  else
+  begin
+    StoreStream(AParam.Content);
+  end;
 end;
 
 function TRALRESTDWJSONParam.ToJSONObject: TRALJSONObject;
@@ -475,6 +738,9 @@ begin
   Result.Add('Direction', GetEnumName(TypeInfo(TRALRESTDWObjectDirection), Ord(FObjectDirection)));
   Result.Add('Encoded', BooleanToString(FEncoded));
   Result.Add('ValueType', GetEnumName(TypeInfo(TRALRESTDWObjectValue), Ord(FObjectValue)));
+  Result.Add('ParamName', FParamName);
+  if FAlias <> '' then
+    Result.Add('Alias', FAlias);
   if FEncoded then
     Result.Add(FParamName, GetAsBase64)
   else
@@ -493,78 +759,115 @@ begin
   end;
 end;
 
-procedure TRALRESTDWJSONParam.AssignTo(ADest: TPersistent);
+procedure TRALRESTDWJSONParam.FromJSON(const AJSON: StringRAL);
 var
-  vStream : TStream;
+  vValue: TRALJSONValue;
+  vObj: TRALJSONObject;
+  vItem: TRALJSONValue;
+  vInt: IntegerRAL;
 begin
-  if ADest.InheritsFrom(TRALRESTDWJSONParam) then
-  begin
-    with ADest as TRALRESTDWJSONParam do
+  vValue := TRALJSON.ParseJSON(AJSON);
+  if vValue = nil then
+    Exit;
+  try
+    if not (vValue is TRALJSONObject) then
+      Exit;
+
+    vObj := TRALJSONObject(vValue);
+
+    vItem := vObj.Get('ObjectType');
+    if vItem <> nil then
     begin
-      TypeObject := Self.TypeObject;
-      ObjectDirection := Self.ObjectDirection;
-      ObjectValue := Self.ObjectValue;
-      ParamName := Self.ParamName;
-      Alias := Self.Alias;
-      AsStream := Self.Value;
+      vInt := GetEnumValue(TypeInfo(TRALRESTDWTypeObject), String(vItem.AsString));
+      if vInt >= 0 then
+        FTypeObject := TRALRESTDWTypeObject(vInt);
     end;
+
+    vItem := vObj.Get('Direction');
+    if vItem <> nil then
+    begin
+      vInt := GetEnumValue(TypeInfo(TRALRESTDWObjectDirection), String(vItem.AsString));
+      if vInt >= 0 then
+        FObjectDirection := TRALRESTDWObjectDirection(vInt);
+    end;
+
+    vItem := vObj.Get('ValueType');
+    if vItem <> nil then
+    begin
+      vInt := GetEnumValue(TypeInfo(TRALRESTDWObjectValue), String(vItem.AsString));
+      if vInt >= 0 then
+        FObjectValue := TRALRESTDWObjectValue(vInt);
+    end;
+
+    vItem := vObj.Get('Encoded');
+    if vItem <> nil then
+      FEncoded := SameText(String(vItem.AsString), 'true');
+
+    vItem := vObj.Get('ParamName');
+    if vItem <> nil then
+      FParamName := vItem.AsString;
+
+    vItem := vObj.Get('Alias');
+    if vItem <> nil then
+      FAlias := vItem.AsString;
+
+    // the value lives under the param's own name, as RDW writes it
+    vItem := vObj.Get(FParamName);
+    if vItem <> nil then
+    begin
+      if FEncoded then
+        SetAsBase64(vItem.AsString)
+      else
+        StoreText(vItem.AsString);
+    end;
+  finally
+    FreeAndNil(vValue);
   end;
 end;
 
-function TRALRESTDWJSONParam.GetAsBase64: StringRAL;
+procedure TRALRESTDWJSONParam.CopyFrom(ASource: TRALRESTDWJSONParam);
 begin
-  Result := TRALBase64.Encode(GetAsString);
+  if ASource = nil then
+    Exit;
+
+  FTypeObject := ASource.TypeObject;
+  FObjectDirection := ASource.ObjectDirection;
+  FObjectValue := ASource.ObjectValue;
+  FParamName := ASource.ParamName;
+  FAlias := ASource.Alias;
+  FParamFileName := ASource.ParamFileName;
+  FParamContentType := ASource.ParamContentType;
+  FFloatDecimalFormat := ASource.FloatDecimalFormat;
+  FDataMode := ASource.DataMode;
+  FDefaultValue := ASource.DefaultValue;
+  FEncoded := ASource.Encoded;
+  StoreStream(ASource.Content);
+end;
+
+procedure TRALRESTDWJSONParam.AssignTo(ADest: TPersistent);
+begin
+  if ADest.InheritsFrom(TRALRESTDWJSONParam) then
+    TRALRESTDWJSONParam(ADest).CopyFrom(Self)
+  else
+    inherited AssignTo(ADest);
 end;
 
 { TRALRESTDWParams }
 
-function TRALRESTDWParams.GetParamIndex(AIndex: IntegerRAL): TRALRESTDWJSONParam;
+constructor TRALRESTDWParams.Create;
 begin
-  Result := nil;
-  if (AIndex >= 0) and (AIndex < FParams.Count) then
-    Result := TRALRESTDWJSONParam(FParams.Items[AIndex]);
+  inherited;
+  FParams := TList.Create;
+  FRequest := nil;
+  FModule := nil;
+  FDataMode := dmRAW;
 end;
 
-function TRALRESTDWParams.GetParamName(AName: StringRAL): TRALRESTDWJSONParam;
-var
-  vInt1: IntegerRAL;
-  vParam: TRALRESTDWJSONParam;
+destructor TRALRESTDWParams.Destroy;
 begin
-  Result := nil;
-  for vInt1 := 0 to Pred(FParams.Count) do
-  begin
-    vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
-    if (SameText(vParam.ParamName, AName)) or (SameText(vParam.Alias, AName)) then
-    begin
-      Result := vParam;
-      Break;
-    end;
-  end;
-end;
-
-procedure TRALRESTDWParams.SetParamIndex(AIndex: IntegerRAL; AValue: TRALRESTDWJSONParam);
-var
-  vParam: TRALRESTDWJSONParam;
-begin
-  if (AIndex >= 0) and (AIndex < FParams.Count) then
-  begin
-    vParam := TRALRESTDWJSONParam(FParams.Items[AIndex]);
-    vParam.AssignTo(AValue);
-    FreeAndNil(AValue);
-  end;
-end;
-
-procedure TRALRESTDWParams.SetParamName(AName: StringRAL; AValue: TRALRESTDWJSONParam);
-var
-  vParam: TRALRESTDWJSONParam;
-begin
-  vParam := GetParamName(AName);
-  if vParam = nil then
-    vParam := NewParam;
-
-  vParam.Assign(AValue);
-
-  FreeAndNil(AValue);
+  ClearParams;
+  FreeAndNil(FParams);
+  inherited;
 end;
 
 procedure TRALRESTDWParams.ClearParams;
@@ -576,19 +879,9 @@ begin
   end;
 end;
 
-constructor TRALRESTDWParams.Create;
-begin
-  inherited;
-  FParams := TList.Create;
-  FRequest := nil;
-  FModule := nil;
-end;
-
-destructor TRALRESTDWParams.Destroy;
+procedure TRALRESTDWParams.Clear;
 begin
   ClearParams;
-  FreeAndNil(FParams);
-  inherited;
 end;
 
 function TRALRESTDWParams.Count: integer;
@@ -600,6 +893,240 @@ function TRALRESTDWParams.NewParam: TRALRESTDWJSONParam;
 begin
   Result := TRALRESTDWJSONParam.Create;
   FParams.Add(Result);
+end;
+
+function TRALRESTDWParams.CreateParam(const AParamName: StringRAL;
+  const AValue: StringRAL): TRALRESTDWJSONParam;
+begin
+  Result := GetParamName(AParamName);
+  if Result = nil then
+  begin
+    Result := NewParam;
+    Result.ParamName := AParamName;
+  end;
+  Result.SetValue(AValue);
+end;
+
+function TRALRESTDWParams.Add(AItem: TRALRESTDWJSONParam): IntegerRAL;
+begin
+  Result := FParams.Add(AItem);
+end;
+
+procedure TRALRESTDWParams.Delete(AIndex: IntegerRAL);
+begin
+  if (AIndex < 0) or (AIndex >= FParams.Count) then
+    Exit;
+
+  TObject(FParams.Items[AIndex]).Free;
+  FParams.Delete(AIndex);
+end;
+
+procedure TRALRESTDWParams.Delete(AParam: TRALRESTDWJSONParam);
+begin
+  Delete(FParams.IndexOf(AParam));
+end;
+
+function TRALRESTDWParams.IndexOf(const AName: StringRAL): IntegerRAL;
+var
+  vInt1: IntegerRAL;
+  vParam: TRALRESTDWJSONParam;
+begin
+  Result := -1;
+  for vInt1 := 0 to Pred(FParams.Count) do
+  begin
+    vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
+    if (SameText(vParam.ParamName, AName)) or (SameText(vParam.Alias, AName)) then
+    begin
+      Result := vInt1;
+      Break;
+    end;
+  end;
+end;
+
+function TRALRESTDWParams.CountInParams: IntegerRAL;
+var
+  vInt1: IntegerRAL;
+begin
+  Result := 0;
+  for vInt1 := 0 to Pred(FParams.Count) do
+    if TRALRESTDWJSONParam(FParams.Items[vInt1]).ObjectDirection in [odIN, odINOUT] then
+      Result := Result + 1;
+end;
+
+function TRALRESTDWParams.CountOutParams: IntegerRAL;
+var
+  vInt1: IntegerRAL;
+begin
+  Result := 0;
+  for vInt1 := 0 to Pred(FParams.Count) do
+    if TRALRESTDWJSONParam(FParams.Items[vInt1]).ObjectDirection in [odOUT, odINOUT] then
+      Result := Result + 1;
+end;
+
+function TRALRESTDWParams.ParamsReturn: boolean;
+begin
+  Result := CountOutParams > 0;
+end;
+
+procedure TRALRESTDWParams.CopyFrom(AParams: TRALRESTDWParams);
+var
+  vInt1: IntegerRAL;
+begin
+  if AParams = nil then
+    Exit;
+
+  ClearParams;
+  for vInt1 := 0 to Pred(AParams.Count) do
+    NewParam.CopyFrom(AParams.Items[vInt1]);
+end;
+
+function TRALRESTDWParams.GetParamIndex(AIndex: IntegerRAL): TRALRESTDWJSONParam;
+begin
+  Result := nil;
+  if (AIndex >= 0) and (AIndex < FParams.Count) then
+    Result := TRALRESTDWJSONParam(FParams.Items[AIndex]);
+end;
+
+function TRALRESTDWParams.GetParamName(AName: StringRAL): TRALRESTDWJSONParam;
+var
+  vIdx: IntegerRAL;
+begin
+  Result := nil;
+  vIdx := IndexOf(AName);
+  if vIdx >= 0 then
+    Result := TRALRESTDWJSONParam(FParams.Items[vIdx]);
+end;
+
+function TRALRESTDWParams.GetRawBody: TRALRESTDWJSONParam;
+begin
+  Result := GetParamName(cUndefined);
+end;
+
+procedure TRALRESTDWParams.SetParamIndex(AIndex: IntegerRAL; AValue: TRALRESTDWJSONParam);
+var
+  vParam: TRALRESTDWJSONParam;
+begin
+  if (AIndex >= 0) and (AIndex < FParams.Count) then
+  begin
+    vParam := TRALRESTDWJSONParam(FParams.Items[AIndex]);
+    vParam.CopyFrom(AValue);
+    FreeAndNil(AValue);
+  end;
+end;
+
+procedure TRALRESTDWParams.SetParamName(AName: StringRAL; AValue: TRALRESTDWJSONParam);
+var
+  vParam: TRALRESTDWJSONParam;
+begin
+  vParam := GetParamName(AName);
+  if vParam = nil then
+  begin
+    vParam := NewParam;
+    vParam.ParamName := AName;
+  end;
+
+  vParam.CopyFrom(AValue);
+  FreeAndNil(AValue);
+end;
+
+function TRALRESTDWParams.ToJSON: StringRAL;
+var
+  vArray: TRALJSONArray;
+  vInt1: IntegerRAL;
+begin
+  vArray := TRALJSONArray.Create;
+  try
+    for vInt1 := 0 to Pred(FParams.Count) do
+      vArray.Add(TRALRESTDWJSONParam(FParams.Items[vInt1]).ToJSONObject);
+    Result := vArray.ToJSON;
+  finally
+    FreeAndNil(vArray);
+  end;
+end;
+
+procedure TRALRESTDWParams.FromJSON(const AJSON: StringRAL);
+var
+  vValue: TRALJSONValue;
+  vArray: TRALJSONArray;
+  vInt1: IntegerRAL;
+begin
+  vValue := TRALJSON.ParseJSON(AJSON);
+  if vValue = nil then
+    Exit;
+  try
+    if not (vValue is TRALJSONArray) then
+      Exit;
+
+    ClearParams;
+    vArray := TRALJSONArray(vValue);
+    for vInt1 := 0 to Pred(vArray.Count) do
+      NewParam.FromJSON(vArray.Get(vInt1).ToJSON);
+  finally
+    FreeAndNil(vValue);
+  end;
+end;
+
+procedure TRALRESTDWParams.SaveToFile(const AFileName: StringRAL);
+var
+  vStream: TFileStream;
+  vJson: StringRAL;
+begin
+  vJson := ToJSON;
+  vStream := TFileStream.Create(AFileName, fmCreate);
+  try
+    if vJson <> '' then
+      vStream.Write(vJson[POSINISTR], Length(vJson));
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+procedure TRALRESTDWParams.LoadFromFile(const AFileName: StringRAL);
+var
+  vStream: TFileStream;
+begin
+  vStream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    FromJSON(StreamToString(vStream));
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+procedure TRALRESTDWParams.LoadFromParams(AParams: TParams);
+var
+  vInt1: IntegerRAL;
+  vParam: TRALRESTDWJSONParam;
+begin
+  if AParams = nil then
+    Exit;
+
+  for vInt1 := 0 to Pred(AParams.Count) do
+  begin
+    vParam := GetParamName(StringRAL(AParams[vInt1].Name));
+    if vParam = nil then
+      vParam := NewParam;
+    vParam.LoadFromParam(AParams[vInt1]);
+  end;
+end;
+
+procedure TRALRESTDWParams.SaveToParams(AParams: TParams);
+var
+  vInt1: IntegerRAL;
+  vParam: TRALRESTDWJSONParam;
+  vTarget: TParam;
+begin
+  if AParams = nil then
+    Exit;
+
+  for vInt1 := 0 to Pred(FParams.Count) do
+  begin
+    vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
+    vTarget := AParams.FindParam(String(vParam.ParamName));
+    if vTarget = nil then
+      vTarget := AParams.CreateParam(ftUnknown, String(vParam.ParamName), ptInput);
+    vParam.SaveFromParam(vTarget);
+  end;
 end;
 
 procedure TRALRESTDWParams.AssignRequest(ARequest: TRALRequest);
@@ -615,8 +1142,10 @@ begin
     if (vParam.ObjectDirection in [odIN, odINOUT]) then
     begin
       vRALParam := ARequest.ParamByName(vParam.ParamName);
+      if (vRALParam = nil) and (vParam.Alias <> '') then
+        vRALParam := ARequest.ParamByName(vParam.Alias);
       if vRALParam <> nil then
-        vParam.AsStream := vRALParam.Content;
+        vParam.ReadFromRALParam(vRALParam);
     end;
   end;
 end;
@@ -636,7 +1165,7 @@ begin
       // ausente era um AV no cliente
       vRALParam := AResponse.ParamByName(vParam.ParamName);
       if vRALParam <> nil then
-        vParam.AsStream := vRALParam.Content;
+        vParam.ReadFromRALParam(vRALParam);
     end;
   end;
 end;
@@ -658,7 +1187,7 @@ begin
         vRALParam := ARequest.Params.NewParam;
         vRALParam.ParamName := vParam.ParamName;
       end;
-      vRALParam.AsStream := vParam.Value;
+      vParam.WriteToRALParam(vRALParam);
       vRALParam.Kind := rpkBODY;
     end;
   end;
@@ -668,12 +1197,22 @@ procedure TRALRESTDWParams.AppendResponse(AResponse: TRALResponse);
 var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
+  vRALParam: TRALParam;
 begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
     if (vParam.ObjectDirection in [odOUT, odINOUT]) then
-      AResponse.Params.AddParam(vParam.ParamName, vParam.Value, rpkBODY);
+    begin
+      vRALParam := AResponse.ParamByName(vParam.ParamName);
+      if vRALParam = nil then
+      begin
+        vRALParam := AResponse.Params.NewParam;
+        vRALParam.ParamName := vParam.ParamName;
+      end;
+      vParam.WriteToRALParam(vRALParam);
+      vRALParam.Kind := rpkBODY;
+    end;
   end;
 end;
 
