@@ -89,6 +89,7 @@ type
     procedure SetPort(AValue: IntegerRAL);
     procedure SetProxyOptions(AValue: TRALRESTDWProxyOptions);
     procedure SetFailOverConnections(AValue: TRALRESTDWConnectionServers);
+    procedure SetFailOver(AValue: Boolean);
     procedure SetUseSSL(AValue: Boolean);
 
     /// Host + Port + UseSSL sao um endereco so para o RAL
@@ -190,11 +191,11 @@ type
     property BinaryRequest: Boolean read FBinaryRequest write FBinaryRequest
       default False;
       // inerte: o corpo do RAL ja vai binario quando precisa
-    property FailOver: Boolean read FFailOver write FFailOver default False;
-      // inerte: o RAL nao tem lista de servidores de reserva
+    { O BaseURL do TRALClient e uma lista, e o RAL passa para a proxima linha
+      quando o transporte falha: e failover, e e nele que a lista do RDW entra. }
+    property FailOver: Boolean read FFailOver write SetFailOver default False;
     property FailOverConnections: TRALRESTDWConnectionServers
       read FFailOverConnections write SetFailOverConnections;
-      // inerte, pelo mesmo motivo - guarda o que o .dfm trouxer
     property FailOverReplaceDefaults: Boolean read FFailOverReplaceDefaults
       write FFailOverReplaceDefaults default False;
       // inerte
@@ -317,10 +318,9 @@ begin
 end;
 
 procedure TRALRESTDWClient.RebuildBaseURL;
-const
-  cEsquema: array[Boolean] of StringRAL = ('http', 'https');
 begin
-  BaseURL.Text := Format('%s://%s:%d', [cEsquema[FUseSSL], FHost, FPort]);
+  RALRESTDWApplyBaseURL(BaseURL, FUseSSL, FHost, FPort, FFailOver,
+                        FFailOverConnections);
 end;
 
 procedure TRALRESTDWClient.RebuildAuth;
@@ -500,6 +500,15 @@ procedure TRALRESTDWClient.SetFailOverConnections(
   AValue: TRALRESTDWConnectionServers);
 begin
   FFailOverConnections.Assign(AValue);
+  RebuildBaseURL;
+end;
+
+procedure TRALRESTDWClient.SetFailOver(AValue: Boolean);
+begin
+  if FFailOver = AValue then
+    Exit;
+  FFailOver := AValue;
+  RebuildBaseURL;
 end;
 
 procedure TRALRESTDWClient.SetProxyOptions(AValue: TRALRESTDWProxyOptions);

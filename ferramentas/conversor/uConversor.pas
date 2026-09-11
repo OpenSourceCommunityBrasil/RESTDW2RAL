@@ -203,21 +203,54 @@ const
   );
 
   { Tipos, para quem preferir trocar em vez de usar o RALRESTDWCompat }
-  cTipos: array[0..13] of TTroca = (
+  { Tipos do espaco de nomes do RDW. Trocam SEMPRE, e nao e capricho: a unit de
+    compatibilidade faz o alias e o compilador se satisfaz, mas o designer da
+    IDE resolve o nome do tipo pelo pacote de design do RDW quando ele esta
+    instalado - e ai recusa o handler com "incompatible parameter list" ao
+    abrir o formulario, mesmo com tudo compilando. Sao nomes do RDW, sem risco
+    de colidir com o que o projeto tenha de proprio. }
+  cTiposSempre: array[0..30] of TTroca = (
     (De: 'TRESTDWParams';        Para: 'TRALRESTDWParams';        Nota: ''),
     (De: 'TDWParams';            Para: 'TRALRESTDWParams';        Nota: ''),
     (De: 'TRESTDWJSONParam';     Para: 'TRALRESTDWJSONParam';     Nota: ''),
+    (De: 'TRESTDWJSONValue';     Para: 'TRALRESTDWJSONParam';     Nota: ''),
     (De: 'TRESTDWParamsMethods'; Para: 'TRALRESTDWParamsMethods'; Nota: ''),
     (De: 'TRESTDWParamMethod';   Para: 'TRALRESTDWParamMethod';   Nota: ''),
     (De: 'TRESTDWEventList';     Para: 'TRALRESTDWEventList';     Nota: ''),
     (De: 'TRESTDWEvent';         Para: 'TRALRESTDWEventServer';   Nota: ''),
     (De: 'TRESTDWClientInfo';    Para: 'TRALRESTDWClientInfo';    Nota: ''),
+    (De: 'TRESTDWRoute';         Para: 'TRALRESTDWRoute';         Nota: ''),
+    (De: 'TRESTDWRoutes';        Para: 'TRALRESTDWRoutes';        Nota: ''),
+    (De: 'TRESTDWContext';       Para: 'TRALRESTDWContext';       Nota: ''),
+    (De: 'TRESTDWContextList';   Para: 'TRALRESTDWContextList';   Nota: ''),
+    (De: 'TRESTDWCriptOptions';  Para: 'TRALRESTDWCriptOptions';  Nota: ''),
+    (De: 'TRESTDWProxyOptions';  Para: 'TRALRESTDWProxyOptions';  Nota: ''),
+    (De: 'TRESTDWConnectionServer'; Para: 'TRALRESTDWConnectionServer'; Nota: ''),
+    (De: 'TRESTDWMIMEType';      Para: 'TRALRESTDWMIMEType';      Nota: ''),
+    (De: 'TRESTDWTokenType';     Para: 'TRALRESTDWTokenType';     Nota: ''),
+    (De: 'TRESTDWTokenRequest';  Para: 'TRALRESTDWTokenRequest';  Nota: ''),
+    (De: 'TRESTDWCryptType';     Para: 'TRALRESTDWCryptType';     Nota: ''),
+    (De: 'TRESTDWAuthOption';    Para: 'TRALRESTDWAuthOption';    Nota: ''),
+    (De: 'TRESTDWAuthOptionParam'; Para: 'TRALRESTDWAuthOptionParam'; Nota: ''),
+    (De: 'TRESTDWAuthOptionBasic'; Para: 'TRALRESTDWAuthOptionBasic'; Nota: ''),
+    (De: 'TRESTDWAuthOptionBearer'; Para: 'TRALRESTDWAuthOptionBearer'; Nota: ''),
+    (De: 'TRESTDWAuthOptionBearerClient'; Para: 'TRALRESTDWAuthOptionBearer'; Nota: ''),
+    (De: 'TRESTDWAuthOptionTokenClient';  Para: 'TRALRESTDWAuthOptionBearer'; Nota: ''),
+    (De: 'TRESTDWAuthTokenParam'; Para: 'TRALRESTDWAuthTokenParam'; Nota: ''),
+    (De: 'TDWAuthRequest';       Para: 'TRALRESTDWAuthRequest';   Nota: ''),
+    (De: 'TDWReplyEvent';        Para: 'TRALRESTDWReplyEvent';    Nota: ''),
+    (De: 'TDWReplyEventStr';     Para: 'TRALRESTDWReplyEventStr'; Nota: ''),
+    (De: 'TDWReplyEventByType';  Para: 'TRALRESTDWReplyEventByType'; Nota: '')
+  );
+
+  { Estes tem nome generico demais para trocar sem o usuario pedir: um projeto
+    pode ter um TDataMode ou um TObjectValue proprio. So com --tipos. }
+  cTipos: array[0..4] of TTroca = (
     (De: 'TObjectDirection';     Para: 'TRALRESTDWObjectDirection'; Nota: ''),
     (De: 'TObjectValue';         Para: 'TRALRESTDWObjectValue';   Nota: ''),
     (De: 'TTypeObject';          Para: 'TRALRESTDWTypeObject';    Nota: ''),
     (De: 'TDataMode';            Para: 'TRALRESTDWDataMode';      Nota: ''),
-    (De: 'TSendEvent';           Para: 'TRALRESTDWSendEvent';     Nota: ''),
-    (De: 'TDWReplyEvent';        Para: 'TRALRESTDWReplyEvent';    Nota: '')
+    (De: 'TSendEvent';           Para: 'TRALRESTDWSendEvent';     Nota: '')
   );
 
   { TRESTDWAuthBasic e TRALServerBasicAuth usam os mesmos nomes: a conversao e
@@ -1209,6 +1242,16 @@ begin
 
   Result := InjetarRegisterClass(Result, AArquivo, vQtd);
   Inc(AQtd, vQtd);
+
+  for vInt1 := Low(cTiposSempre) to High(cTiposSempre) do
+  begin
+    Result := TrocaPalavra(Result, RawByteString(cTiposSempre[vInt1].De),
+                           RawByteString(cTiposSempre[vInt1].Para), vQtd);
+    Inc(AQtd, vQtd);
+    if vQtd > 0 then
+      Avisar(AArquivo, Format('%s -> %s (%d)', [cTiposSempre[vInt1].De,
+             cTiposSempre[vInt1].Para, vQtd]), taRenomeado);
+  end;
 
   if FTrocarTipos then
     for vInt1 := Low(cTipos) to High(cTipos) do

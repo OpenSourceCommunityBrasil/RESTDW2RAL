@@ -120,16 +120,43 @@ begin
   btAplicar.Enabled := vTem and (lvArquivos.Items.Count > 0);
 end;
 
+{ A caixa de escolher pasta e a mesma de abrir arquivo, com fdoPickFolders: da
+  para digitar o caminho, colar, usar os atalhos da lateral e a barra de
+  endereco. A antiga era a arvore do SelectDirectory, onde achar uma pasta
+  funda e um exercicio de paciencia.
+
+  O TFileOpenDialog e do Vista para cima; em Windows mais velho ele levanta na
+  criacao, e ai vale a arvore de antes. }
 procedure Tfprincipal.btEscolherClick(Sender: TObject);
 var
   vDir: string;
+  vDlg: TFileOpenDialog;
 begin
   vDir := edPasta.Text;
-  if SelectDirectory('Pasta do projeto a converter', '', vDir) then
+
+  if Win32MajorVersion >= 6 then
   begin
-    edPasta.Text := vDir;
-    Limpar;
-  end;
+    vDlg := TFileOpenDialog.Create(nil);
+    try
+      vDlg.Title := 'Pasta do projeto a converter';
+      vDlg.Options := [fdoPickFolders, fdoPathMustExist, fdoForceFileSystem];
+      vDlg.OkButtonLabel := 'Usar esta pasta';
+      if DirectoryExists(vDir) then
+        vDlg.DefaultFolder := vDir;
+
+      if not vDlg.Execute(Handle) then
+        Exit;
+
+      vDir := vDlg.FileName;
+    finally
+      vDlg.Free;
+    end;
+  end
+  else if not SelectDirectory('Pasta do projeto a converter', '', vDir) then
+    Exit;
+
+  edPasta.Text := vDir;
+  Limpar;
 end;
 
 { A lista sai do registro do Delphi, e nao de um catalogo fixo: quem migra ve

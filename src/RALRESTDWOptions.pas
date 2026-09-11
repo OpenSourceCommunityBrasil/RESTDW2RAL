@@ -382,6 +382,18 @@ procedure RALRESTDWApplyClientAuth(AClient: TRALClient;
                                    AOptions: TRALRESTDWAuthOptions;
                                    var ABasic: TRALClientBasicAuth);
 /// CriptOptions.Use/Key -> CriptoOptions.CriptType/Key
+{ Monta o BaseURL do TRALClient a partir do servidor principal e da lista de
+  reserva do RDW.
+
+  O BaseURL do RAL e um TStrings, e nao uma linha so: cada linha e um servidor,
+  e quando o transporte falha ele avanca o indice e tenta a proxima. Ou seja, o
+  RAL tem failover - o que o RDW chama de FailOverConnections cai exatamente
+  nas linhas seguintes. }
+procedure RALRESTDWApplyBaseURL(ADest: TStrings; AUseSSL: Boolean;
+                                const AHost: StringRAL; APort: IntegerRAL;
+                                AFailOver: Boolean;
+                                AConexoes: TRALRESTDWConnectionServers);
+
 procedure RALRESTDWApplyCripto(AOptions: TRALRESTDWCriptOptions;
                                ADest: TRALCriptoOptions);
 { CORS_CustomHeaders do RDW e uma lista 'Header=Valor'; o RAL guarda a origem
@@ -810,6 +822,45 @@ begin
 
   if AClient.Authentication <> ABasic then
     AClient.Authentication := ABasic;
+end;
+
+procedure RALRESTDWApplyBaseURL(ADest: TStrings; AUseSSL: Boolean;
+  const AHost: StringRAL; APort: IntegerRAL; AFailOver: Boolean;
+  AConexoes: TRALRESTDWConnectionServers);
+const
+  cEsquema: array[Boolean] of StringRAL = ('http', 'https');
+var
+  vInt1: IntegerRAL;
+  vItem: TRALRESTDWConnectionServer;
+  vLinha: StringRAL;
+begin
+  if ADest = nil then
+    Exit;
+
+  ADest.BeginUpdate;
+  try
+    ADest.Clear;
+    ADest.Add(Format('%s://%s:%d', [cEsquema[AUseSSL], AHost, APort]));
+
+    if (not AFailOver) or (AConexoes = nil) then
+      Exit;
+
+    for vInt1 := 0 to Pred(AConexoes.Count) do
+    begin
+      vItem := AConexoes[vInt1];
+      if Trim(vItem.Host) = '' then
+        Continue;
+
+      { o item publica os dois nomes do RDW sobre o mesmo campo, entao Host e
+        PoolerService sao a mesma coisa aqui }
+      vLinha := Format('%s://%s:%d', [cEsquema[vItem.TypeRequest = trHttps],
+                                      vItem.Host, vItem.Port]);
+      if ADest.IndexOf(string(vLinha)) < 0 then
+        ADest.Add(vLinha);
+    end;
+  finally
+    ADest.EndUpdate;
+  end;
 end;
 
 procedure RALRESTDWApplyCripto(AOptions: TRALRESTDWCriptOptions;

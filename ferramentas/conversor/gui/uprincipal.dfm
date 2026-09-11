@@ -87,7 +87,7 @@ object fprincipal: Tfprincipal
       Width = 400
       Height = 17
       Caption =
-        'Trocar tambem os nomes de tipo (dispensavel com RALRESTDWCompat)'
+        'Trocar tambem os tipos de nome generico (TDataMode, TObjectValue...)'
       TabOrder = 3
     end
     object btSimular: TButton

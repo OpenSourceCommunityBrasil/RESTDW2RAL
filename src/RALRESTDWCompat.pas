@@ -134,6 +134,38 @@ type
   TRALRESTDWClientEvents = RALRESTDWClientEvents.TRALRESTDWClientEvents;
   TRALRESTDWDataModule   = RALRESTDWDataModule.TRALRESTDWDataModule;
   TRALRESTDWParams       = RALRESTDWParams.TRALRESTDWParams;
+
+  { O resto dos nomes nativos, pelo mesmo motivo e com um a mais: o conversor
+    troca os tipos do espaco de nomes do RDW pelos daqui, porque o designer da
+    IDE resolve TRESTDWParams pelo pacote do RDW quando ele esta instalado e
+    recusa o handler. Com os nomes trocados, o arquivo convertido continua
+    precisando so desta unit no uses. }
+  TRALRESTDWJSONParam        = RALRESTDWParams.TRALRESTDWJSONParam;
+  TRALRESTDWParamsMethods    = RALRESTDWParamsMethods.TRALRESTDWParamsMethods;
+  TRALRESTDWParamMethod      = RALRESTDWParamsMethods.TRALRESTDWParamMethod;
+  TRALRESTDWEventList        = RALRESTDWEvents.TRALRESTDWEventList;
+  TRALRESTDWEventServer      = RALRESTDWEvents.TRALRESTDWEventServer;
+  TRALRESTDWRoute            = RALRESTDWEvents.TRALRESTDWRoute;
+  TRALRESTDWRoutes           = RALRESTDWEvents.TRALRESTDWRoutes;
+  TRALRESTDWReplyEvent       = RALRESTDWEvents.TRALRESTDWReplyEvent;
+  TRALRESTDWReplyEventStr    = RALRESTDWEvents.TRALRESTDWReplyEventStr;
+  TRALRESTDWReplyEventByType = RALRESTDWEvents.TRALRESTDWReplyEventByType;
+  TRALRESTDWAuthRequest      = RALRESTDWEvents.TRALRESTDWAuthRequest;
+  TRALRESTDWClientInfo       = RALRESTDWDataModule.TRALRESTDWClientInfo;
+  TRALRESTDWContext          = RALRESTDWServerContext.TRALRESTDWContext;
+  TRALRESTDWContextList      = RALRESTDWServerContext.TRALRESTDWContextList;
+  TRALRESTDWMIMEType         = RALRESTDWTypes.TRALRESTDWMIMEType;
+  TRALRESTDWCriptOptions     = RALRESTDWOptions.TRALRESTDWCriptOptions;
+  TRALRESTDWProxyOptions     = RALRESTDWOptions.TRALRESTDWProxyOptions;
+  TRALRESTDWConnectionServer = RALRESTDWOptions.TRALRESTDWConnectionServer;
+  TRALRESTDWTokenType        = RALRESTDWOptions.TRALRESTDWTokenType;
+  TRALRESTDWTokenRequest     = RALRESTDWOptions.TRALRESTDWTokenRequest;
+  TRALRESTDWCryptType        = RALRESTDWOptions.TRALRESTDWCryptType;
+  TRALRESTDWAuthOption       = RALRESTDWOptions.TRALRESTDWAuthOption;
+  TRALRESTDWAuthOptionParam  = RALRESTDWOptions.TRALRESTDWAuthOptionParam;
+  TRALRESTDWAuthOptionBasic  = RALRESTDWOptions.TRALRESTDWAuthOptionBasic;
+  TRALRESTDWAuthOptionBearer = RALRESTDWOptions.TRALRESTDWAuthOptionBearer;
+  TRALRESTDWAuthTokenParam   = RALRESTDWOptions.TRALRESTDWAuthTokenParam;
   TRALRESTDWMassiveCache = RALRESTDWMassive.TRALRESTDWMassiveCache;
   TRALRESTDWServerContext = RALRESTDWServerContext.TRALRESTDWServerContext;
 

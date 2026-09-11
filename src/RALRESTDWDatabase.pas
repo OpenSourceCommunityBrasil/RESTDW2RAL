@@ -123,6 +123,7 @@ type
     procedure SetPoolerService(const AValue: StringRAL);
     procedure SetProxyOptions(AValue: TRALRESTDWProxyOptions);
     procedure SetFailOverConnections(AValue: TRALRESTDWConnectionServers);
+    procedure SetFailOver(AValue: Boolean);
     procedure SetRequestTimeOut(AValue: IntegerRAL);
     procedure SetStateConnection(AValue: TRALRESTDWStateConnection);
     procedure SetUserAgent(const AValue: StringRAL);
@@ -229,11 +230,11 @@ type
     property ProxyOptions: TRALRESTDWProxyOptions read FProxyOptions
       write SetProxyOptions;
       // inerte: idem
-    property FailOver: Boolean read FFailOver write FFailOver default False;
-      // inerte: o RAL nao tem lista de servidores de reserva
+    { vira linha a mais no BaseURL do cliente interno, que e a lista de failover
+      do RAL - ver RALRESTDWApplyBaseURL }
+    property FailOver: Boolean read FFailOver write SetFailOver default False;
     property FailOverConnections: TRALRESTDWConnectionServers
       read FFailOverConnections write SetFailOverConnections;
-      // inerte: idem - guarda o que o .dfm trouxer
     property FailOverReplaceDefaults: Boolean read FFailOverReplaceDefaults
       write FFailOverReplaceDefaults default False;
       // inerte: idem
@@ -401,14 +402,12 @@ begin
 end;
 
 procedure TRALRESTDWDatabase.RebuildBaseURL;
-const
-  cEsquema: array[Boolean] of StringRAL = ('http', 'https');
 begin
   if FInterno = nil then
     Exit;
 
-  FInterno.BaseURL.Text := Format('%s://%s:%d',
-                                  [cEsquema[FUseSSL], FPoolerService, FPoolerPort]);
+  RALRESTDWApplyBaseURL(FInterno.BaseURL, FUseSSL, FPoolerService, FPoolerPort,
+                        FFailOver, FFailOverConnections);
 end;
 
 procedure TRALRESTDWDatabase.SetActive(AValue: Boolean);
@@ -589,6 +588,15 @@ procedure TRALRESTDWDatabase.SetFailOverConnections(
   AValue: TRALRESTDWConnectionServers);
 begin
   FFailOverConnections.Assign(AValue);
+  RebuildBaseURL;
+end;
+
+procedure TRALRESTDWDatabase.SetFailOver(AValue: Boolean);
+begin
+  if FFailOver = AValue then
+    Exit;
+  FFailOver := AValue;
+  RebuildBaseURL;
 end;
 
 procedure TRALRESTDWDatabase.SetProxyOptions(AValue: TRALRESTDWProxyOptions);

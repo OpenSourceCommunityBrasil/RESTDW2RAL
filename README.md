@@ -118,7 +118,7 @@ execução:
 | `MassiveCache.MassiveCount` | quantas alterações o cache do dataset tem para enviar |
 | `SortFields`, `SortOrder` | `IndexFieldNames` do memtable |
 
-O que o RAL não tem — `FailOver`, `ProxyOptions`, `ThreadRequest`, `Encoding`,
+O que o RAL não tem — `ProxyOptions`, `ThreadRequest`, `Encoding`,
 `ForceWelcomeAccess` — continua **publicado e inerte**: o formulário abre, o código
 compila, e cada membro diz ao lado do próprio código por que não faz nada. Publicar é
 obrigatório, e não gentileza: o leitor de DFM para na primeira propriedade que a classe
@@ -706,8 +706,11 @@ servidor e depois o cliente. O servidor loga as rotas que descobriu sozinho:
   o conversor reporta cada um. Código que atribuía sequência ou vetava registro ali
   precisa mudar de lugar — para um trigger, para o próprio `SQL`, ou para um evento
   chamado antes do `ApplyUpdates`.
-- **Sem lista de servidores de reserva.** `FailOver`, `FailOverConnections` e os eventos
-  de failover são aceitos e inertes: o RAL não troca de servidor sozinho.
+- **Failover funciona.** O `BaseURL` do `TRALClient` é uma lista: cada linha é um
+  servidor, e o RAL passa para a próxima quando o transporte falha. Com `FailOver`
+  ligado, cada item de `FailOverConnections` vira uma linha depois da principal. Os
+  *eventos* de failover (`OnFailOverExecute` e afins) continuam inertes: quem troca de
+  servidor é o RAL, sem avisar o projeto.
 - **`TRESTDWMassiveBuffer` e `TRESTDWUpdateSQL`** continuam sem equivalente, e o
   conversor aponta cada ocorrência.
 - **Sem `CriptOptions` por parâmetro.** A criptografia no RAL é configurada no

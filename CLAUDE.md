@@ -268,10 +268,36 @@ the cache is unreachable from a descendant. `TRALRESTDWClientSQL` counts them it
 `InternalPost`/`InternalDelete` — that is what `MassiveCount` reports, and what keeps
 `ApplyUpdates` from calling RAL with an empty cache, which faults inside RAL.
 
+### O que o conversor troca no código, e por quê
+
+The converter renames the **RDW-namespaced types** (`TRESTDWParams`, `TDWParams`,
+`TRESTDWAuthOptionBasic`, ...) in the `.pas` as well, always - not only with `--tipos`.
+It has to: the compat unit aliases them and the compiler is happy, but **the IDE
+designer resolves the type name through RDW's own design package** when that is
+installed, and then refuses every bound handler with *has an incompatible parameter
+list* on opening the form. Measured on this machine, where `RESTDWCoreDesign.bpl` is
+installed alongside ours.
+
+That is why `RALRESTDWCompat` re-exports the native `TRALRESTDW*` names too: with the
+types renamed, a converted unit still needs nothing but `RALRESTDWCompat` in its uses.
+Names that are *not* RDW-namespaced (`TDataMode`, `TObjectValue`, `TTypeObject`,
+`TObjectDirection`, `TSendEvent`) stay behind `--tipos`: a project may have its own.
+
 ## Traps
 
 - **A lone body param travels without its name.** PascalRAL's `EncodeBody` skips multipart when there is exactly one body param and sends the raw value; the name arrives as `ral_body`. This bit both directions — `getevents` sends only `servereventname` when `AccessTag` is empty, and a handler returning just text answers with only `cUndefined`. Both sides now read in two steps (by name, then `Body`). Its own `CLAUDE.md` says not to "fix" this in RAL, so any new param that can travel alone needs the same two-step read.
 - **PascalRAL faults under `$R+` on any query with a parameter.** `RALDBSQLCache.GetQueryParams` (`src/database/RALDBSQLCache.pas`, line 308) does `vParam.Size := GetInt64Prop(vColetItem, 'Size')` - reading an `Integer` property as `Int64`. Range checking turns the truncation into `ERangeError`, and the IDE turns range checking on for every Debug build. Confirmed by map lookup, with a param whose `Size` is 0 and `DataType` is `ftInteger`; setting `Size` by hand does not help, because the bad read happens inside RAL. **There is no client-side workaround** - it has to be fixed there (`GetOrdProp`). The events half is unaffected. Until then the DB demos need range checking off.
+- **Only `Open` is asynchronous.** `TRALDBConnection` posts `ExecSQL` and `ApplyUpdates`
+  with `ebSingleThread`, so their callback has already run when `inherited` returns;
+  only `OpenRemote` is threaded. Waiting for those two through `CheckSynchronize` meant
+  nothing ever arrived and the wait ran the full `RequestTimeout` - thirty seconds of
+  frozen window on every `ExecSQL`, with the command already executed. `ExecSQL` and
+  `ApplyUpdates` now mark the response done before calling `WaitResponse`, which is
+  still called because it is what raises the stored error in the caller's context.
+- **`ApplyUpdates` posts the open edit first.** In a grid the record sits in `dsEdit`
+  until the user leaves the row, and the project's button calls `ApplyUpdates` straight
+  away: without the `Post` the change on screen never became a pending statement and the
+  next `Open` brought back the old value. RDW posts it too.
 - **The DB calls are async in RAL and synchronous here.** `TRALDBConnection` posts `Open`/`ExecSQL`/`ApplyUpdates` with a callback and `ebMultiThread`, so they return before the answer exists. `TRALRESTDWClientSQL.WaitResponse` pumps `CheckSynchronize` until the callback lands, because RDW's are synchronous and ported code reads `RecordCount` on the next line. It re-enters: the callback calls `SetActive` again, and `FWaiting` is what keeps that from waiting on itself. `ThreadRequest` opts back out.
 - **An error raised inside the callback escapes the caller's `try..except`.** That is why `InternalError` only *stores* the message and `WaitResponse` raises it - in the context of whoever called `Open`.
 - **`RootPath` is a folder on disk, not a URL prefix.** RDW serves static files from it

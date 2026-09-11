@@ -720,6 +720,13 @@ begin
   FResponseDone := False;
   inherited ExecSQL;
 
+  { Destes tres, so o Open e assincrono: o RAL despacha ExecSQL e ApplyUpdates
+    com ebSingleThread, e o callback ja rodou quando o inherited retorna. Como
+    nada mais chega pela fila do Synchronize, a espera ia ate o timeout - eram
+    trinta segundos de janela travada a cada Execute, com o comando ja
+    executado. O WaitResponse continua sendo chamado porque e ele quem levanta
+    o erro guardado, no contexto de quem chamou. }
+  FResponseDone := True;
   if not FThreadRequest then
     WaitResponse(False);
 end;
@@ -728,6 +735,13 @@ procedure TRALRESTDWClientSQL.ApplyUpdates;
 begin
   if FApplying then
     Exit;
+
+  { A edicao aberta entra junto. Numa grid o registro fica em dsEdit ate
+    alguem mudar de linha, e o botao de aplicar do projeto chama ApplyUpdates
+    direto: sem este Post a alteracao que esta na tela nunca virou pendencia,
+    e o proximo Open a devolvia como estava. E o que o RDW faz. }
+  if State in [dsEdit, dsInsert] then
+    Post;
 
   { Sem nada pendente nao se chama o RAL: ele nao trata cache vazio e quebra
     com violacao de acesso la dentro. No RDW aplicar sem alteracao e no-op, e
@@ -740,6 +754,8 @@ begin
     FResponseDone := False;
     inherited ApplyUpdates;
 
+    { sincrono no RAL, como o ExecSQL - ver o comentario la }
+    FResponseDone := True;
     if not FThreadRequest then
       WaitResponse(False);
   finally
