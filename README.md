@@ -33,6 +33,8 @@ assinatura** ficam idênticos.
 - [Cliente](#cliente)
 - [Parâmetros](#parâmetros)
 - [Datasets](#datasets)
+- [Banco de dados: o ClientSQL](#banco-de-dados-o-clientsql)
+- [Conversor de projetos](#conversor-de-projetos)
 - [Autorização](#autorização)
 - [De/Para: RDW → RESTDW2RAL](#depara-rdw--restdw2ral)
 - [Diretiva RDW143](#diretiva-rdw143)
@@ -113,6 +115,14 @@ compile e **Install**. Adicione `src` ao *Library Path*.
 
 A paleta ganha **RAL - RDWModule** (`TRALRESTDWServerEvents`, `TRALRESTDWClientEvents`) e
 **RAL - Modules** (`TRALRESTDWModule`).
+
+### O pacote de banco, separado
+
+Quem vem do `TRESTDWClientSQL` instala também `RALRESTDWDB` — `pkg/delphi/RALRESTDWDB.dproj`
+ou `pkg/lazarus/RALRESTDWDB.lpk`. Ele é um pacote à parte de propósito: depende do link de
+banco do RAL (`RALDBFireDACLink` no Delphi, `raldbsqldblink` no Lazarus), e quem só usa
+eventos não deve carregar FireDAC junto. Ele traz o `TRALRESTDWClientSQL` para a mesma
+paleta **RAL - RDWModule**.
 
 ---
 
@@ -390,6 +400,81 @@ AParams.LoadFromParams(FQuery.Params);   // query → params
 
 ---
 
+## Banco de dados: o ClientSQL
+
+`TRALRESTDWClientSQL` é o `TRESTDWClientSQL` vestido sobre o dataset remoto do PascalRAL.
+Descende dele — `TRALDBFDMemTable` no Delphi, `TRALDBBufDataset` no Lazarus — então é um
+`TDataSet` de verdade: liga em `TDataSource`, em grade, em campos persistentes.
+
+```pascal
+qry.DataBase := conexao;                    // TRALDBConnection
+qry.SQL.Text := 'SELECT * FROM clientes WHERE uf = :uf';
+qry.ParamByName('uf').AsString := 'PR';
+qry.UpdateTableName := 'clientes';
+qry.Open;                                   // síncrono, como no RDW
+
+qry.Edit;
+qry.FieldByName('nome').AsString := 'novo';
+qry.Post;
+qry.ApplyUpdates;                           // manda as alterações do cache
+```
+
+No servidor não há nada a escrever: um `TRALDBModule` do PascalRAL, apontado para o banco,
+publica as rotas e executa o SQL que chega.
+
+| propriedade | vem do RDW | o que faz |
+| --- | --- | --- |
+| `DataBase` | sim | o `TRALDBConnection` — era o pooler de banco do RDW |
+| `SQL`, `Params`, `ParamByName` | sim | iguais |
+| `UpdateTableName` | sim | tabela usada para montar insert/update/delete |
+| `MasterDataSet` + `MasterFields` | sim | master/detail: a cada troca de registro no master, os campos nomeados vão para os params de mesmo nome e o detalhe refaz a consulta |
+| `CacheUpdateRecords` | sim | `True` (padrão) guarda Post/Delete até o `ApplyUpdates` |
+| `AutoCommitData` | sim | manda cada Post/Delete na hora |
+| `AutoRefreshAfterCommit` / `ReflectChanges` | sim | refaz a consulta depois de gravar |
+| `RaiseErrors` | sim | **`True` por padrão** |
+| `OnGetDataError` | sim | mesma assinatura do RDW |
+| `RowsAffected`, `LastId` | sim / novo | quantas linhas o servidor mexeu |
+| `ThreadRequest` | sim | `True` volta na hora e entrega depois |
+| `RequestTimeout` | novo | quanto esperar pela resposta, em ms |
+| `ExecSQL`, `ApplyUpdates`, `RefreshData` | sim | iguais |
+
+### Duas coisas que o adaptador conserta
+
+**As chamadas são síncronas.** O dataset remoto do RAL manda `Open`, `ExecSQL` e
+`ApplyUpdates` com callback e `ebMultiThread`: as três voltam antes de a resposta existir,
+e ler `RecordCount` na linha seguinte ao `Open` dava zero. No RDW essas três são síncronas
+e o código portado conta com isso, então aqui a chamada espera a resposta. `ThreadRequest`
+devolve o comportamento assíncrono para quem o quiser.
+
+**Erro não passa calado.** O RAL só avisa a falha se `OnError` estiver atribuído; sem
+handler, a operação falhava em silêncio. Aqui, sem `OnGetDataError` e sem `OnError`, o
+`RaiseErrors` levanta exceção — e levanta no contexto de quem chamou, não de dentro do
+callback, para que o seu `try..except` em volta do `Open` funcione.
+
+---
+
+## Conversor de projetos
+
+`ferramentas/conversor` é um utilitário de console que faz o trabalho mecânico:
+
+```
+rdw2ral <pasta>              # simula e mostra o relatório
+rdw2ral <pasta> --aplicar --backup
+```
+
+Ele tira do `uses` toda unit que comece com `uRESTDW` ou `uDW`, põe `RALRESTDWCompat` no
+lugar, e renomeia no `.dfm`/`.lfm` as classes dos componentes e as propriedades que
+mudaram de nome. Não encosta no corpo do seu código — com a unit de compatibilidade, ele
+não precisa.
+
+Trabalha em bytes e nunca decodifica, então fonte em CP1252 não vira mojibake; e só troca
+identificador isolado, então o componente `RESTDWClientSQL1` e o handler
+`RESTDWClientSQL1CalcFields` não são reescritos junto com a classe.
+
+Detalhes em [`ferramentas/conversor/LEIAME.md`](ferramentas/conversor/LEIAME.md).
+
+---
+
 ## Autorização
 
 Três camadas, da mais fraca para a mais forte:
@@ -439,6 +524,9 @@ do mesmo evento.
 | `TObjectEvent` / `TObjectExecute` / `TOnBeforeSend` | `TRALRESTDWObjectEvent` / `TRALRESTDWObjectExecute` / `TRALRESTDWBeforeSend` |
 | `TObjectValue` / `TObjectDirection` / `TTypeObject` / `TDataMode` | `TRALRESTDWObjectValue` / `TRALRESTDWObjectDirection` / `TRALRESTDWTypeObject` / `TRALRESTDWDataMode` |
 | `TSendEvent` | `TRALRESTDWSendEvent` |
+| `TRESTDWClientSQL` | `TRALRESTDWClientSQL` |
+| `TRESTClientPooler` (banco) | `TRALDBConnection` |
+| pooler de banco do servidor | `TRALDBModule` do PascalRAL |
 | `Params.RawBody` | `Params.RawBody` |
 
 Todos os nomes da coluna da esquerda continuam valendo se você usar `RALRESTDWCompat` — é
@@ -470,6 +558,7 @@ Em `exemplo/`, prontas para rodar:
 | --- | --- |
 | `delphi/servidor` | `TRALIndyServer` + `TRALRESTDWModule`, cinco eventos cobrindo params de entrada/saída, `odINOUT`, dataset e autorização por evento |
 | `delphi/cliente` | `TRALClient` + `TRALRESTDWClientEvents` com a coleção vazia — mostra o `AutoFetch` funcionando |
+| `delphi/cliente_db` | `TRALRESTDWClientSQL` sobre SQLite: Open, ExecSQL com params, ApplyUpdates, master/detail e metadados |
 | `lazarus/cliente` | o mesmo cliente em Lazarus/FPC, com o engine `fpHTTP` |
 
 Abra o `.dpr`/`.lpi` na IDE (o Delphi cria o `.dproj` sozinho ao abrir o `.dpr`), rode o
@@ -488,6 +577,14 @@ servidor e depois o cliente. O servidor loga as rotas que descobriu sozinho:
 
 ## Limitações conhecidas
 
+- **Um defeito do PascalRAL derruba a metade de banco em build Debug.** Em
+  `src/database/RALDBSQLCache.pas`, `GetQueryParams` faz
+  `vParam.Size := GetInt64Prop(vColetItem, 'Size')` — lê como `Int64` uma propriedade
+  `Size` que é `Integer`. Com *range checking* ligado, que é o padrão do Debug no IDE,
+  qualquer consulta **com parâmetro** morre em `ERangeError`; sem ele, o valor é truncado e
+  passa. Não há contorno pelo lado do cliente: a leitura acontece dentro do RAL, sobre o
+  parâmetro que você passou. Até ser corrigido lá (`GetOrdProp` resolve), desligue o range
+  checking no projeto ou use build Release. A metade de eventos não é afetada.
 - **`toMassive` não tem implementação.** O `MassiveDataset` do RDW (buffer de alterações
   para aplicar em lote) não tem equivalente aqui. Para escrita em lote, use o
   `TRALDBModule` do RAL.

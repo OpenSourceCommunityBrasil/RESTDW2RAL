@@ -11,12 +11,16 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
   Vcl.StdCtrls,
-  RALServer, RALIndyServer, RALRoutes, RALTypes, RALRESTDWModule;
+  RALServer, RALIndyServer, RALRoutes, RALTypes, RALRESTDWModule,
+  { o RALDBFireDAC precisa estar linkado para que o DatabaseLink 'FireDAC'
+    encontre o driver pelo nome }
+  RALDBModule, RALDBFireDAC;
 
 type
   Tfprincipal = class(TForm)
     server: TRALIndyServer;
     rdw: TRALRESTDWModule;
+    dbm: TRALDBModule;
     mLog: TMemo;
     btLigar: TButton;
     procedure FormCreate(Sender: TObject);
@@ -34,7 +38,7 @@ implementation
 {$R *.dfm}
 
 uses
-  udm_eventos;
+  udm_eventos, udm_banco;
 
 procedure Tfprincipal.Log(const AMsg: string);
 begin
@@ -61,6 +65,14 @@ end;
 procedure Tfprincipal.FormCreate(Sender: TObject);
 begin
   MostrarRotas;
+
+  { o banco e criado ao lado do executavel na primeira execucao; o caminho vai
+    para o modulo em codigo porque depende de onde o exe esta }
+  PrepararBanco;
+  dbm.Database := ArquivoBanco;
+  Log('banco DBWare: ' + dbm.Database);
+  Log(Format('   rotas de banco publicadas em "%s" pelo TRALDBModule', [dbm.Domain]));
+  Log('');
 
   server.Start;
   Log(Format('servidor no ar em http://localhost:%d', [server.Port]));

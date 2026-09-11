@@ -1,10 +1,8 @@
-program srv_rdw2ral;
+program cli_rdw2ral_db;
 
 uses
   Vcl.Forms,
-  uprincipal in 'uprincipal.pas' {fprincipal},
-  udm_eventos in 'udm_eventos.pas' {dm_eventos: TDataModule},
-  udm_banco in 'udm_banco.pas';
+  uprincipal in 'uprincipal.pas' {fprincipal};
 
 {$R *.res}
 

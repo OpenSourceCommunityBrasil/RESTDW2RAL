@@ -49,4 +49,13 @@ object fprincipal: Tfprincipal
     Left = 576
     Top = 320
   end
+  object dbm: TRALDBModule
+    Server = server
+    Domain = '/db'
+    DatabaseLink = 'FireDAC'
+    DatabaseType = dtSQLite
+    Port = 0
+    Left = 480
+    Top = 320
+  end
 end
