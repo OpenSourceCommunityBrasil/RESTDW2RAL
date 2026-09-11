@@ -23,6 +23,8 @@ type
     btEscolher: TButton;
     chkBackup: TCheckBox;
     chkTipos: TCheckBox;
+    lbServidor: TLabel;
+    cbServidor: TComboBox;
     btSimular: TButton;
     btAplicar: TButton;
     lvArquivos: TListView;
@@ -45,6 +47,10 @@ type
     procedure AoAviso(const AArquivo, ATexto: string; ATipo: TTipoAviso);
     procedure Rodar(AAplicar: Boolean);
     procedure Limpar;
+    /// Preenche a lista de motores, com os instalados na frente
+    procedure CarregarServidores;
+    /// A casca correspondente ao motor escolhido; vazio se nao houver
+    function ClasseEscolhida: string;
     procedure AtualizarBotoes;
     /// Aceita uma pasta arrastada para dentro da janela
     procedure WMDropFiles(var AMsg: TWMDropFiles); message WM_DROPFILES;
@@ -69,6 +75,8 @@ procedure Tfprincipal.FormCreate(Sender: TObject);
 begin
   FConv := TConversor.Create;
   DragAcceptFiles(Handle, True);
+
+  CarregarServidores;
 
   sb.SimpleText := '  Escolha a pasta do projeto e clique em Simular. ' +
                    'Nada e gravado ate voce mandar aplicar.';
@@ -124,6 +132,39 @@ begin
   end;
 end;
 
+{ A lista sai do registro do Delphi, e nao de um catalogo fixo: quem migra ve
+  os motores que tem instalados na frente, e os outros marcados. }
+procedure Tfprincipal.CarregarServidores;
+var
+  vLista: TStringList;
+begin
+  vLista := TStringList.Create;
+  try
+    TConversor.ServidoresInstalados(vLista);
+    cbServidor.Items.Assign(vLista);
+    if cbServidor.Items.Count > 0 then
+      cbServidor.ItemIndex := 0;
+  finally
+    FreeAndNil(vLista);
+  end;
+end;
+
+function Tfprincipal.ClasseEscolhida: string;
+var
+  vServidores: TArray<TServidorRAL>;
+  vIdx: Integer;
+begin
+  Result := '';
+  if cbServidor.ItemIndex < 0 then
+    Exit;
+
+  vIdx := NativeInt(cbServidor.Items.Objects[cbServidor.ItemIndex]);
+  vServidores := TConversor.ServidoresRAL;
+  if (vIdx >= 0) and (vIdx <= High(vServidores)) and
+     vServidores[vIdx].TemCasca then
+    Result := vServidores[vIdx].Classe;
+end;
+
 procedure Tfprincipal.Limpar;
 begin
   lvArquivos.Items.Clear;
@@ -150,7 +191,9 @@ end;
 
 procedure Tfprincipal.AoAviso(const AArquivo, ATexto: string; ATipo: TTipoAviso);
 const
-  cMarca: array[TTipoAviso] of string = ('[uses]  ', '[nome]  ', '[ATENCAO] ');
+  cMarca: array[TTipoAviso] of string = ('[uses]    ', '[nome]    ',
+                                        '[portado] ', '[perdido] ',
+                                        '[modulo]  ', '[ATENCAO] ');
 begin
   mAvisos.Lines.Add(Format('%s%s: %s',
                            [cMarca[ATipo], ExtractFileName(AArquivo), ATexto]));
@@ -182,6 +225,14 @@ begin
   FConv.Aplicar := AAplicar;
   FConv.Backup := chkBackup.Checked;
   FConv.TrocarTipos := chkTipos.Checked;
+  FConv.ServidorRAL := ClasseEscolhida;
+  { sem casca daquele motor a conversao sairia apontando para uma classe que
+    nao existe, e o projeto so quebraria na hora de compilar }
+  FConv.ConverterTransporte := FConv.ServidorRAL <> '';
+  if not FConv.ConverterTransporte then
+    mAvisos.Lines.Add('[ATENCAO] o motor escolhido ainda nao tem casca neste ' +
+                      'projeto - o transporte fica como esta e so o resto e ' +
+                      'convertido');
   FConv.OnArquivo := AoArquivo;
   FConv.OnAviso := AoAviso;
 

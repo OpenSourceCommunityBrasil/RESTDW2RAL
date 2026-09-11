@@ -2,9 +2,9 @@
 <CONFIG>
   <Package Version="5">
     <PathDelim Value="\"/>
-    <Name Value="RALRESTDWDB"/>
+    <Name Value="RALRESTDWIndy"/>
     <Type Value="RunAndDesignTime"/>
-    <Description Value="RESTDW2RAL - dataset remoto no formato do TRESTDWClientSQL"/>
+    <Description Value="RESTDW2RAL - o service pooler do RDW sobre o motor Indy do PascalRAL. Separado porque arrasta o Indy: um projeto que so e cliente, ou que roda noutro motor, nao tem por que carrega-lo."/>
     <CompilerOptions>
       <Version Value="11"/>
       <PathDelim Value="\"/>
@@ -20,21 +20,13 @@
     </CompilerOptions>
     <Files>
       <Item>
-        <Filename Value="..\..\src\RALRESTDWClientSQL.pas"/>
-        <UnitName Value="RALRESTDWClientSQL"/>
+        <Filename Value="..\..\src\RALRESTDWIndyPooler.pas"/>
+        <UnitName Value="RALRESTDWIndyPooler"/>
       </Item>
       <Item>
-        <Filename Value="..\..\src\RALRESTDWDatabase.pas"/>
-        <UnitName Value="RALRESTDWDatabase"/>
-      </Item>
-      <Item>
-        <Filename Value="..\..\src\RALRESTDWPoolerDB.pas"/>
-        <UnitName Value="RALRESTDWPoolerDB"/>
-      </Item>
-      <Item>
-        <Filename Value="..\..\src\RALRESTDWDBReg.pas"/>
+        <Filename Value="..\..\src\RALRESTDWIndyReg.pas"/>
         <HasRegisterProc Value="True"/>
-        <UnitName Value="RALRESTDWDBReg"/>
+        <UnitName Value="RALRESTDWIndyReg"/>
       </Item>
     </Files>
     <RequiredPkgs>
@@ -42,10 +34,7 @@
         <PackageName Value="RALRESTDW"/>
       </Item>
       <Item>
-        <PackageName Value="raldbsqldblink"/>
-      </Item>
-      <Item>
-        <PackageName Value="FCL"/>
+        <PackageName Value="indyral"/>
       </Item>
     </RequiredPkgs>
     <UsageOptions>

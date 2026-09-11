@@ -55,6 +55,26 @@
         <Filename Value="..\..\src\RALRESTDWCompat.pas"/>
         <UnitName Value="RALRESTDWCompat"/>
       </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWOptions.pas"/>
+        <UnitName Value="RALRESTDWOptions"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWDataModule.pas"/>
+        <UnitName Value="RALRESTDWDataModule"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWClient.pas"/>
+        <UnitName Value="RALRESTDWClient"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWMassive.pas"/>
+        <UnitName Value="RALRESTDWMassive"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWServerContext.pas"/>
+        <UnitName Value="RALRESTDWServerContext"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

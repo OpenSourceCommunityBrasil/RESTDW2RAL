@@ -51,7 +51,7 @@ end;
 procedure TForm1.btPingClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('ping', vParams);
   if vParams = nil then
@@ -73,7 +73,7 @@ end;
 procedure TForm1.btSomaClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('soma', vParams);
   if vParams = nil then
@@ -97,7 +97,7 @@ end;
 procedure TForm1.btCadastroClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('cadastro', vParams);
   if vParams = nil then

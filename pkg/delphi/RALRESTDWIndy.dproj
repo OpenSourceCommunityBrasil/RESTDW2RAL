@@ -1,7 +1,7 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{5B87E696-3E28-45CB-A9D9-4BB5A44F7369}</ProjectGuid>
-        <MainSource>RALRESTDWDB.dpk</MainSource>
+        <MainSource>RALRESTDWIndy.dpk</MainSource>
         <ProjectVersion>20.2</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
@@ -151,11 +151,9 @@
         </DelphiCompile>
         <DCCReference Include="rtl.dcp"/>
         <DCCReference Include="RALRESTDW.dcp"/>
-        <DCCReference Include="RALDBFireDACLink.dcp"/>
-        <DCCReference Include="..\..\src\RALRESTDWClientSQL.pas"/>
-        <DCCReference Include="..\..\src\RALRESTDWDBReg.pas"/>
-        <DCCReference Include="..\..\src\RALRESTDWDatabase.pas"/>
-        <DCCReference Include="..\..\src\RALRESTDWPoolerDB.pas"/>
+        <DCCReference Include="IndyRAL.dcp"/>
+        <DCCReference Include="..\..\src\RALRESTDWIndyPooler.pas"/>
+        <DCCReference Include="..\..\src\RALRESTDWIndyReg.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
@@ -174,7 +172,7 @@
         <BorlandProject>
             <Delphi.Personality>
                 <Source>
-                    <Source Name="MainSource">RALRESTDWDB.dpk</Source>
+                    <Source Name="MainSource">RALRESTDWIndy.dpk</Source>
                 </Source>
                 <Excluded_Packages>
                     <Excluded_Packages Name="D:\desenvolvimento\componentes_xe\pascalscript\Dcu\D25\win32\PascalScript_Core_D25.bpl">RemObjects Pascal Script - Core Package</Excluded_Packages>

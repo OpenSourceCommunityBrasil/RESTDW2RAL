@@ -1,4 +1,4 @@
-package RALRESTDWDB;
+package RALRESTDWIndy;
 
 {$R *.res}
 {$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
@@ -30,12 +30,10 @@ package RALRESTDWDB;
 requires
   rtl,
   RALRESTDW,
-  RALDBFireDACLink;
+  IndyRAL;
 
 contains
-  RALRESTDWClientSQL in '..\..\src\RALRESTDWClientSQL.pas',
-  RALRESTDWDatabase in '..\..\src\RALRESTDWDatabase.pas',
-  RALRESTDWPoolerDB in '..\..\src\RALRESTDWPoolerDB.pas',
-  RALRESTDWDBReg in '..\..\src\RALRESTDWDBReg.pas';
+  RALRESTDWIndyPooler in '..\..\src\RALRESTDWIndyPooler.pas',
+  RALRESTDWIndyReg in '..\..\src\RALRESTDWIndyReg.pas';
 
 end.

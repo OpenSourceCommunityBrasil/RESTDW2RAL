@@ -8,9 +8,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Both halves matter equally: the server side (`TRALRESTDWModule` + `TRALRESTDWServerEvents`) and the client side (`TRALRESTDWClientEvents`). A change that only serves one of them is half a change.
 
-It ships **two packages per compiler**. `RALRESTDW` is the events half and depends only on PascalRAL; `RALRESTDWDB` adds `TRALRESTDWClientSQL` and depends on a RAL database link (`RALDBFireDACLink` on Delphi, `raldbsqldblink` on Lazarus) - split on purpose, so an events-only user does not drag FireDAC in. There is also `ferramentas/conversor`, which rewrites a RDW project's `uses` and form class names: `uConversor.pas` holds every rule, and `rdw2ral.dpr` (console) and `gui/rdw2ralgui.dpr` (window) are two shells over it - **change the rule in the unit, never in one of the shells**, or the two drift apart. The window is the path a migrating user is meant to take; the console is for scripting.
+It ships **three packages per compiler**, split so that nobody carries what they do not use. `RALRESTDW` is the events half plus the client transport, the DataModule, the massive types and the server context, and depends only on PascalRAL; `RALRESTDWDB` adds `TRALRESTDWClientSQL`, `TRALRESTDWDatabase` and `TRALRESTDWPoolerDB`, and needs a RAL database link (`RALDBFireDACLink` on Delphi, `raldbsqldblink` on Lazarus); `RALRESTDWIndy` adds the server transport and needs `IndyRAL`. A new unit goes in four places **of the package it belongs to**: the `.dpk`, the `.dproj` `<DCCReference>` list, the `.lpk`, and the Lazarus-generated `.pas`.
 
-It is an IDE component package, not an application: no `main`, **no test suite and no CI** (`.github/` holds only `FUNDING.yml`). Ten units in `src/`, demos under `exemplo/`.
+There is also `ferramentas/conversor`: `uConversor.pas` holds every rule, and `rdw2ral.dpr` (console) and `gui/rdw2ralgui.dpr` (window) are two shells over it - **change the rule in the unit, never in one of the shells**, or the two drift apart. The window is the path a migrating user is meant to take; the console is for scripting.
+
+### The shells are the load-bearing idea
+
+A converter can rewrite a `.dfm`. It cannot rewrite *code* with any confidence, and RDW's transports are driven from code constantly - across the official RDW demos `AuthenticationOptions.OptionParams` appears 40 times, `Active` 26, `RootPath` 9, `ServerMethodClass` 5. So this project carries a class wearing each RDW transport's face with RAL inside it, and **the converter only swaps the class name**:
+
+| RDW | shell here | unit |
+| --- | --- | --- |
+| `TRESTDW*ServicePooler` | `TRALRESTDWIndyServicePooler` | `RALRESTDWIndyPooler` |
+| `TRESTDW*ClientPooler`, `*ClientREST` | `TRALRESTDWClient` | `RALRESTDWClient` |
+| `TServerMethodDataModule` | `TRALRESTDWDataModule` | `RALRESTDWDataModule` |
+| `TRESTDWIdDatabase` | `TRALRESTDWDatabase` | `RALRESTDWDatabase` |
+| `TRESTDWPoolerDB`, `TRESTDWFireDACDriver` | `TRALRESTDWPoolerDB`, `TRALRESTDWFireDACDriver` | `RALRESTDWPoolerDB` |
+| `TRESTDWMassiveCache` + os tipos do massive | `TRALRESTDWMassiveCache` | `RALRESTDWMassive` |
+| `TRESTDWServerContext` | `TRALRESTDWServerContext` | `RALRESTDWServerContext` |
+| as classes de opção (auth, cripto, proxy, conexão) | `TRALRESTDW*` | `RALRESTDWOptions` |
+
+Three rules follow from that, and breaking any of them breaks a migrated project:
+
+1. **Publish everything the RDW class published, even what RAL cannot honour.** DFM streaming stops at the first unknown property and takes the whole form with it. An inert member says so in a comment beside itself; Delphi 12 rejects `deprecated` on a property, so the comment plus the converter's report is the whole warning channel.
+2. **The mapping lives in `RALRESTDWOptions.pas`, never in a shell.** `TRALServer` is abstract and the engine is the descendant, so there is one shell per RAL *engine* (the migrating user picks it, the RDW class name does not decide). Keeping `RALRESTDWApply*` outside them is what makes the next engine a thin file instead of a second copy of the rules.
+3. **Not every RAL base has a virtual constructor.** `TRALDBConnection.Create` is declared `overload`, not `override`, so it hides `TComponent`'s virtual one: a constructor declared in a descendant is never called when the form streams the component. `TRALRESTDWDatabase` initialises in `AfterConstruction`, which is virtual and runs before the first property is read. Check the ancestor before writing a constructor.
+4. **A `var` string parameter is `String`, never `StringRAL`.** `StringRAL` is `UTF8String` - one byte per character against two. The compiler refuses the mismatch on a normal call, and on a handler bound through the DFM (matched by name, signature unchecked) it does not even refuse: it corrupts. `SendEvent(..., var AError)`, `OnAuthRequest` and the `RDW143` `Result` all take `String`, exactly as RDW declares them.
+
+It is an IDE component package, not an application: no `main`, **no test suite and no CI** (`.github/` holds only `FUNDING.yml`). Fifteen units in `src/`, demos under `exemplo/`.
 
 **Reference checkouts, all sibling directories, all read-only — never edit them:**
 - `../PascalRAL` — the RAL we build against (branch `dev`). Has its own `CLAUDE.md`; read it for `StringRAL`/`IntegerRAL`, `{$IFDEF FPC}@{$ENDIF}` on method pointers, `FixRoute`, `TRALParams`, typed params, `TRALModuleRoutes`, and the compiler recipes.
@@ -27,8 +51,10 @@ Install order — `RALRESTDW` requires `PascalRALDsgn`, which requires `PascalRA
 msbuild ..\PascalRAL\pkg\Delphi\PascalRAL.dproj     /t:Build /p:Config=Release /p:Platform=Win32
 msbuild ..\PascalRAL\pkg\Delphi\PascalRALDsgn.dproj /t:Build /p:Config=Release /p:Platform=Win32
 msbuild pkg\delphi\RALRESTDW.dproj                  /t:Build /p:Config=Release /p:Platform=Win32
+msbuild pkg\delphi\RALRESTDWIndy.dproj              /t:Build /p:Config=Release /p:Platform=Win32
 
 lazbuild --build-ide= pkg\lazarus\RALRESTDW.lpk
+lazbuild --build-ide= pkg\lazarus\RALRESTDWIndy.lpk
 ```
 
 If msbuild dies with `MSB6003` / "dcc could not be run", see `../PascalRAL/CLAUDE.md` — it is the `DelphiLibraryPath` length problem, not this package.
@@ -54,19 +80,51 @@ Expected noise, all pre-existing: `W1057` implicit string casts by the hundred (
 **Compiling against the sources is not the whole check.** The `../PascalRAL` tree moves daily and the `PascalRAL.bpl` a user has installed can be weeks behind, so a brand-new RAL function compiles here and then refuses to install on their machine. That already happened once: `RALTools.RALSameName` landed 2026-09-10 and the installed package was from 2026-09-01. Build the package itself against the **installed** `.dcp` as well, which is the shape an install actually takes:
 
 ```powershell
-$pub = "C:SERSPUBLICDOCUMENTSmbarcaderoStudio.0"   # onde ficam Bpl e Dcp
-& "$bdsindcc32.exe" --no-config -B -Q -NS"..." ``
-  -U"$bdsibwin32elease;$pubDcp;<repo>src" -I"<repo>src" ``
-  -LU"rtl;PascalRALDsgn" -N0"<out>dcu" -LE"<out>" -LN"<out>" RALRESTDW.dpk
+$pub = "C:\Users\Public\Documents\Embarcadero\Studio\23.0"   # onde ficam Bpl e Dcp
+& "$bds\bin\dcc32.exe" --no-config -B -Q -NS"..." `
+  -U"$bds\lib\win32\release;$pub\Dcp;<repo>\src" -I"<repo>\src" `
+  -LU"rtl;PascalRALDsgn" -N0"<out>\dcu" -LE"<out>" -LN"<out>" RALRESTDW.dpk
 ```
+
+That is how `MaxRedirects` was caught: `TRALClient` only grew it recently, so the shell's
+`RedirectMaximum` compiled fine against the sources and then refused to install. It is
+inert now, on purpose. `RALRESTDWIndy` builds the same way but needs the freshly produced
+`RALRESTDW.dcp` on the `-U` path (add the `-LE` output directory), since the installed one
+is older than the units it depends on.
 
 It needs `pkg/delphi/RALRESTDW.res`, which the IDE generates and the repo does not track - `brcc32` over a one-line `.rc` produces a usable one. Prefer the oldest API that does the job: this package should install on a PascalRAL that is a few weeks old.
 
 **Compile with range checking on at least once.** `dcc32 --no-config` leaves `$R` off, the IDE turns it on for every Debug build, and the difference is not academic: `TRALStringStream` ends every write in `WriteBytes`, which does `Write(ABytes[0], Length(ABytes))` - indexing `[0]` of an empty array. Harmless with the check off, `ERangeError` with it on, and it fires on something as ordinary as a param declared with no `DefaultValue`. Nothing in this repo may hand empty content to those constructors; `StoreText`/`StoreStream` build an empty stream instead. Add `'-$R+'` to the dcc32 line (quoted, or PowerShell eats `$R` as a variable) and run the demos again.
 
+### Lazarus
+
+`lazbuild` builds the packages straight from the checkout, and Lazarus 3 with FPC 3.2.2 is installed here:
+
+```powershell
+C:\lazarus\lazbuild.exe --build-all pkg\lazarus\RALRESTDW.lpk
+C:\lazarus\lazbuild.exe --build-all pkg\lazarus\RALRESTDWIndy.lpk
+C:\lazarus\lazbuild.exe --build-all pkg\lazarus\RALRESTDWDB.lpk
+C:\lazarus\lazbuild.exe --build-all exemplo\lazarus\cliente\cli_rdw2ral.lpi
+```
+
+`pascalral` and `pascalraldsgn` are already installed in that IDE, so the packages resolve. Two things to know:
+
+- **The demo needs a `.res` that the repo does not track**, and `windres` here dies with `gcc: cannot exec 'cpp'`. Delphi's `brcc32` produces a plain Win32 `.res` that FPC reads fine - same one-line `.rc` recipe as above. Opening the `.lpi` in the IDE also generates it.
+- **`lazbuild` writes `packagefiles.xml` into the working directory** and leaves `.obj` next to the demo. Both are in `.gitignore`; check `git status` before committing anyway.
+
+Three FPC-only defects have already been caught this way, and all three compile silently on Delphi:
+
+1. **`ftExtended` and `ftSingle` do not exist in FPC's `DB`.** Not a different value - the identifier is absent, so the whole `case` line has to go under `{$IFNDEF FPC}`.
+2. **A method pointer needs `()` to be called.** `Result := FOnContar;` is the pointer in ObjFPC and the call in Delphi. Always write `FOnContar()`.
+3. **Calling an overload of the enclosing routine by its bare name fails** with *Illegal expression*: `ApplyUpdates;` inside `function ApplyUpdates(var AError): Boolean`. `Self.ApplyUpdates()` resolves it on both compilers.
+
 ### End-to-end
 
 `exemplo/delphi/servidor` + `exemplo/delphi/cliente` exercise every feature. For an automated pass, a console harness that drives `TRALRESTDWClientEvents` against the running server covers discovery, typed params, datasets, per-event auth and the failure paths in one run — that is how the current behaviour was validated (19 checks, all green).
+
+**Our own demos are not the real check.** They were written against this code and agree with it by construction; a migrating user's project was not. Copy a real RDW demo out of `../RDW/branch/dev/CORE/demos/Delphi/VCL` into the scratchpad, convert it, compile it, and run it. `SimpleServer` is the smallest complete one and the fastest signal: set `Active = True` in its `.dfm`, build with `-DRDW143`, and drive `/teste` with every verb (the handler answers 200 for GET/DELETE and 201 for POST/PUT/PATCH, so a wrong status is a real failure and not a guess). That loop is what found every defect worth finding here - the wrong bind port, the duplicated `uses`, the missing `TRESTDWAuthBasic` alias, the `var String` mismatch.
+
+Those demos also come in two shapes and both must pass: `SimpleServer` is RDW 1.4.3 (`var Result: String`, `Routes = [crAll]`) and `FileTransfer` is RDW 2.1 (`const Result: TStringList`, `Routes.All`). The converter reports which one it saw.
 
 ## Architecture
 

@@ -10,7 +10,9 @@ interface
 uses
   RALRESTDWReg, RALRESTDWModule, RALRESTDWParams, RALRESTDWParamsMethods, 
   RALRESTDWServerEvents, RALRESTDWTypes, RALRESTDWClientEvents, 
-  RALRESTDWEvents, RALRESTDWCompat, LazarusPackageIntf;
+  RALRESTDWEvents, RALRESTDWCompat, RALRESTDWOptions, RALRESTDWDataModule,
+  RALRESTDWClient, RALRESTDWMassive, RALRESTDWServerContext,
+  LazarusPackageIntf;
 
 implementation
 

@@ -36,8 +36,11 @@ iOSSimARM64/
 *.or
 *.rst
 *.lrt
+*.obj
 lib/
 backup/
+# o lazbuild grava a lista de pacotes da maquina na raiz do que ele compila
+packagefiles.xml
 
 # binarios
 *.exe

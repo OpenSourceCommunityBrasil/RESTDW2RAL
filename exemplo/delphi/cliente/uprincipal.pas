@@ -61,7 +61,7 @@ end;
 procedure Tfprincipal.btPingClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('ping', vParams);
   if vParams = nil then
@@ -85,7 +85,7 @@ end;
 procedure Tfprincipal.btSomaClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('soma', vParams);
   if vParams = nil then
@@ -114,7 +114,7 @@ end;
 procedure Tfprincipal.btCadastroClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('cadastro', vParams);
   if vParams = nil then
@@ -141,7 +141,7 @@ end;
 procedure Tfprincipal.btClientesClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro: StringRAL;
+  vErro: string;
 begin
   ce.CreateDWParams('clientes', vParams);
   if vParams = nil then
@@ -168,7 +168,7 @@ end;
 procedure Tfprincipal.btSigiloClick(Sender: TObject);
 var
   vParams: TRALRESTDWParams;
-  vErro, vNativo: StringRAL;
+  vErro, vNativo: string;
 begin
   ce.CreateDWParams('sigilo', vParams);
   if vParams = nil then

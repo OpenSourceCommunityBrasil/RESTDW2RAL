@@ -17,6 +17,11 @@ type
 
   TRALRESTDWJSONParam = class(TPersistent)
   private
+    { Existe porque o codigo do RDW atribui Encoding em valor que ele mesmo
+      cria. O RAL fala UTF-8 sempre, entao o valor e guardado e ignorado. }
+    FEncoding: TRALRESTDWEncodeSelect;
+    { Aceito e inerte: o RAL escreve UTF-8 sempre, entao nao ha o que ligar. }
+    FUtf8SpecialChars: Boolean;
     FTypeObject: TRALRESTDWTypeObject;
     FObjectDirection: TRALRESTDWObjectDirection;
     FObjectValue: TRALRESTDWObjectValue;
@@ -112,7 +117,17 @@ type
 
       Serialized with PascalRAL's own storage (BIN), which is what TRALDBModule
       uses, so the bytes are readable by any RAL dataset consumer. }
-    procedure LoadFromDataSet(ADataSet: TDataSet);
+    procedure LoadFromDataSet(ADataSet: TDataSet); overload;
+    { A forma do RDW, com os seis argumentos. TableName so rotula o conteudo;
+      EncodedValue, o formato de data e o separador decimal nao entram porque
+      o dataset do RAL viaja binario, onde numero e data tem tipo proprio e
+      nao dependem de formatacao nenhuma - que e justamente o que torna a
+      chamada imune ao locale da maquina. }
+    procedure LoadFromDataset(ATableName: StringRAL; ADataSet: TDataSet;
+                              AEncodedValue: Boolean = True;
+                              ADataMode: TRALRESTDWDataMode = dmDataware;
+                              const ADateTimeFormat: StringRAL = '';
+                              const ADelimiterFormat: StringRAL = ''); overload;
     procedure SaveToDataSet(ADataSet: TDataSet);
 
     /// Writes this param into a RAL param, typed when the declared type has a
@@ -126,6 +141,11 @@ type
     function TestNilParam : Boolean;
     function Size : Int64;
   published
+    property Encoding: TRALRESTDWEncodeSelect read FEncoding write FEncoding
+      default esUtf8;
+    property Utf8SpecialChars: Boolean read FUtf8SpecialChars
+      write FUtf8SpecialChars default True;
+      // inerte: o RAL escreve UTF-8 sempre
     property TypeObject: TRALRESTDWTypeObject read FTypeObject write FTypeObject;
     property ObjectDirection: TRALRESTDWObjectDirection read FObjectDirection write FObjectDirection;
     property ObjectValue: TRALRESTDWObjectValue read FObjectValue write FObjectValue;
@@ -245,6 +265,8 @@ begin
   FObjectValue := ovString;
   FDataMode := dmRAW;
   FDefaultValue := Null;
+  FEncoding := esUtf8;
+  FUtf8SpecialChars := True;
   FValue := nil;
 end;
 
@@ -655,6 +677,17 @@ begin
     AParam.Clear
   else
     AParam.Value := GetVariantValue;
+end;
+
+procedure TRALRESTDWJSONParam.LoadFromDataset(ATableName: StringRAL;
+  ADataSet: TDataSet; AEncodedValue: Boolean; ADataMode: TRALRESTDWDataMode;
+  const ADateTimeFormat: StringRAL; const ADelimiterFormat: StringRAL);
+begin
+  FDataMode := ADataMode;
+  if ATableName <> '' then
+    FParamName := ATableName;
+
+  LoadFromDataSet(ADataSet);
 end;
 
 procedure TRALRESTDWJSONParam.LoadFromDataSet(ADataSet: TDataSet);

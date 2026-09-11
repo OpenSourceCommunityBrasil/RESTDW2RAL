@@ -26,7 +26,7 @@ object fprincipal: Tfprincipal
     Left = 0
     Top = 0
     Width = 894
-    Height = 101
+    Height = 122
     Align = alTop
     BevelOuter = bvNone
     TabOrder = 0
@@ -66,10 +66,25 @@ object fprincipal: Tfprincipal
       State = cbChecked
       TabOrder = 2
     end
+    object lbServidor: TLabel
+      Left = 14
+      Top = 90
+      Width = 118
+      Height = 15
+      Caption = 'Servidor do RAL a gerar:'
+    end
+    object cbServidor: TComboBox
+      Left = 138
+      Top = 86
+      Width = 260
+      Height = 23
+      Style = csDropDownList
+      TabOrder = 6
+    end
     object chkTipos: TCheckBox
       Left = 224
       Top = 68
-      Width = 330
+      Width = 400
       Height = 17
       Caption =
         'Trocar tambem os nomes de tipo (dispensavel com RALRESTDWCompat)'
@@ -97,9 +112,9 @@ object fprincipal: Tfprincipal
   end
   object pnCima: TPanel
     Left = 0
-    Top = 101
+    Top = 122
     Width = 894
-    Height = 260
+    Height = 239
     Align = alClient
     BevelOuter = bvNone
     TabOrder = 1

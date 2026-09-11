@@ -2,6 +2,13 @@
 
 Faz o trabalho mecânico da migração do REST Dataware para o RESTDW2RAL.
 
+**Ele troca nomes, e é só isso.** Quem faz o de/para de verdade são as classes do
+projeto que vestem a cara do RDW — `TRALRESTDWIndyServicePooler`, `TRALRESTDWClient`,
+`TRALRESTDWDataModule` — com o RAL implementado por dentro. É por isso que nenhuma
+propriedade do seu formulário é alterada ou descartada: `ServicePort`, `RootPath`,
+`CORS_CustomHeaders`, `AuthenticationOptions`, `CriptOptions` continuam lá, com o mesmo
+nome, e viram configuração do RAL em tempo de execução.
+
 Vem em duas formas, **com a mesma regra por baixo**: `uConversor.pas` tem todo o
 motor, e os dois programas são só a casca. Mexeu na regra, mexeu para os dois.
 
@@ -19,7 +26,15 @@ dcc32 gui\rdw2ralgui.dpr      # a janela
 dcc32 rdw2ral.dpr             # o console
 ```
 
-Ou abra o `.dpr` no Delphi e compile.
+Abrir o `.dpr` no Delphi e compilar é mais simples, porque a IDE gera o `.res` do
+projeto sozinha. Pela linha de comando o `.res` da janela não existe — é saída de
+build e o repositório não o versiona — então gere um antes, com `brcc32` sobre um
+`.rc` de uma linha **sem BOM**:
+
+```powershell
+Set-Content -Encoding ascii gui\res.rc '1 24 "manifest.txt"'
+brcc32 -fogui\rdw2ralgui.res gui\res.rc
+```
 
 ## A janela
 
@@ -27,15 +42,28 @@ Ou abra o `.dpr` no Delphi e compile.
 lembrar de um argumento:
 
 1. **Escolha a pasta** — pelo botão, ou arraste a pasta para dentro da janela.
+1. **Escolha o motor do RAL** — a lista sai do registro do Delphi, com os que você tem
+   instalados na frente. Quem decide o motor é você: `TRESTDWIdServicePooler` e
+   `TRESTDWIcsServicePooler` vão os dois para o motor escolhido. Um motor marcado como
+   *casca ainda não feita* ainda não tem a classe correspondente no projeto; escolhê-lo
+   faz o conversor deixar o transporte como está e dizer isso no relatório.
 2. **Simular** — nada é gravado. A lista mostra cada arquivo que mudaria e quantas
    alterações; o painel de baixo mostra os avisos. Duplo clique num arquivo abre a
    pasta dele no Explorer.
 3. **Aplicar** — só habilita depois de uma simulação que achou algo, e pede
    confirmação. Se você tiver desmarcado o `.bak`, o aviso diz isso na cara.
 
-Os avisos vêm marcados: `[uses]` é unit do RDW removida, `[nome]` é classe ou
-propriedade renomeada, e **`[ATENCAO]`** é o que o conversor não sabe converter e
-precisa de decisão sua. A barra de status conta quantos `[ATENCAO]` apareceram.
+Os avisos vêm marcados:
+
+| marca | o que é |
+| --- | --- |
+| `[uses]` | unit do RDW removida do `uses` |
+| `[nome]` | classe renomeada |
+| `[portado]` | uma regra do RDW que virou outra coisa no RAL |
+| `[modulo]` | algo que o conversor acrescentou, como o `RegisterClass` |
+| **`[ATENCAO]`** | o que ele não sabe converter e precisa de decisão sua |
+
+A barra de status conta quantos `[ATENCAO]` apareceram.
 
 A janela também aceita a pasta como argumento, então dá para chamá-la de um atalho
 ou do menu "Enviar para" do Windows.
@@ -52,6 +80,10 @@ rdw2ral <pasta ou arquivo> [opções]
 | `--aplicar` | grava as alterações |
 | `--backup` | guarda o original como `.bak` antes de gravar |
 | `--tipos` | troca também os nomes de tipo no código (desnecessário com a unit `RALRESTDWCompat`) |
+| `--servidor <classe>` | qual casca de servidor gerar; o padrão é `TRALRESTDWIndyServicePooler` |
+| `--modulo <classe>` | classe do DataModule dos eventos; descoberta sozinha quando não informada |
+| `--sem-transporte` | não mexe no pooler |
+| `--servidores` | lista os motores do RAL desta máquina e sai |
 
 **Rode sem `--aplicar` primeiro e leia os avisos.**
 
@@ -59,8 +91,8 @@ rdw2ral <pasta ou arquivo> [opções]
 
 | arquivo | o que muda |
 | --- | --- |
-| `.pas` `.dpr` `.lpr` | tira do `uses` toda unit que comece com `uRESTDW` ou `uDW` e põe `RALRESTDWCompat` no lugar (mais `RALRESTDWClientSQL` quando o arquivo usa o dataset) |
-| `.dfm` `.lfm` | renomeia as classes dos componentes e as propriedades que trocaram de nome |
+| `.pas` `.dpr` `.lpr` | tira do `uses` toda unit que comece com `uRESTDW` ou `uDW` e põe `RALRESTDWCompat` no lugar (mais a unit da casca e `RALRESTDWClientSQL`, quando o arquivo precisa); troca o tipo do campo do transporte; acrescenta `RegisterClass(TSeuDataModule)` |
+| `.dfm` `.lfm` | renomeia as classes dos componentes; converte o `Routes = [crAll]` do RDW antigo para `Routes.All.Active` |
 
 Renomeações no formulário:
 
@@ -69,7 +101,17 @@ Renomeações no formulário:
 | `TRESTDWServerEvents` | `TRALRESTDWServerEvents` |
 | `TRESTDWClientEvents` | `TRALRESTDWClientEvents` |
 | `TRESTDWClientSQL` | `TRALRESTDWClientSQL` |
+| `TRESTDWIdServicePooler`, `TRESTDWIcsServicePooler` | a casca do motor escolhido |
+| `TRESTDWIdClientPooler`, `TRESTDWIdClientREST` | `TRALRESTDWClient` |
+| `TRESTDWIdDatabase` | `TRALRESTDWDatabase` |
+| `TRESTDWPoolerDB`, `TRESTDWFireDACDriver` | as cascas de mesmo nome |
+| `TRESTDWMassiveCache` | `TRALRESTDWMassiveCache` |
+| `TRESTDWServerContext` | `TRALRESTDWServerContext` |
+| `TRESTDWAuthBasic` | `TRALServerBasicAuth` |
 | `RESTClientPooler =` | `RALClient =` |
+
+**Nenhuma propriedade é alterada nem descartada.** O bloco do componente sai do
+conversor exatamente como entrou, só com outra classe em cima — é a casca que traduz.
 
 ## O que ele não faz, de propósito
 

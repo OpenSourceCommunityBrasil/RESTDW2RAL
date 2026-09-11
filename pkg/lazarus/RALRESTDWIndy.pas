@@ -2,21 +2,21 @@
   This source is only used to compile and install the package.
  }
 
-unit RALRESTDWDB;
+unit RALRESTDWIndy;
 
 {$warn 5023 off : no warning about unused units}
 interface
 
 uses
-  RALRESTDWClientSQL, RALRESTDWDatabase, RALRESTDWPoolerDB, RALRESTDWDBReg, LazarusPackageIntf;
+  RALRESTDWIndyPooler, RALRESTDWIndyReg, LazarusPackageIntf;
 
 implementation
 
 procedure Register;
 begin
-  RegisterUnit('RALRESTDWDBReg', @RALRESTDWDBReg.Register);
+  RegisterUnit('RALRESTDWIndyReg', @RALRESTDWIndyReg.Register);
 end;
 
 initialization
-  RegisterPackage('RALRESTDWDB', @Register);
+  RegisterPackage('RALRESTDWIndy', @Register);
 end.

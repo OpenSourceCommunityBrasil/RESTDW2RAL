@@ -16,11 +16,16 @@ type
     They carry `var` on the params exactly like REST Dataware, so an existing
     handler only has to have its parameter type renamed - see RALRESTDWCompat,
     which aliases even that away. }
+  { AResult e String, e nao StringRAL, de proposito: StringRAL e UTF8String, o
+    handler do RDW 1.4.3 declara String, e o DFM liga os dois pelo nome sem
+    conferir a assinatura. Um byte por caractere de um lado e dois do outro
+    nao daria erro de compilacao - daria texto corrompido na primeira
+    chamada. }
   {$IFDEF RDW143}
   TRALRESTDWReplyEvent = procedure(var AParams: TRALRESTDWParams;
-                                   var AResult: StringRAL) of object;
+                                   var AResult: string) of object;
   TRALRESTDWReplyEventByType = procedure(var AParams: TRALRESTDWParams;
-                                         var AResult: StringRAL;
+                                         var AResult: string;
                                          const ARequestType: TRALMethod;
                                          var AStatusCode: IntegerRAL;
                                          ARequestHeader: TStringList) of object;
@@ -37,7 +42,7 @@ type
   /// Per-event authorization, fired before the handler
   TRALRESTDWAuthRequest = procedure(const AParams: TRALRESTDWParams;
                                     var ARejected: Boolean;
-                                    var AResultError: StringRAL;
+                                    var AResultError: string;
                                     var AStatusCode: IntegerRAL;
                                     ARequestHeader: TStringList) of object;
   /// Same shape as RDW's TObjectExecute
@@ -513,14 +518,17 @@ procedure TRALRESTDWEventServer.ReplyEvent(ARequest: TRALRequest;
 var
   vParams: TRALRESTDWParams;
   {$IFDEF RDW143}
-    vResult: StringRAL;
+    { String, e nao StringRAL: a assinatura do handler tem que bater com a do
+      RDW 1.4.3, que o DFM liga por nome sem conferir }
+    vResult: string;
   {$ELSE}
     vResult: TStringList;
   {$ENDIF}
   vHeader: TStringList;
   vStatusCode: IntegerRAL;
   vRejected: boolean;
-  vError, vInvalid: StringRAL;
+  vInvalid: StringRAL;
+  vError: string;
 begin
   {$IFDEF RDW143}
     vResult := '';
@@ -563,7 +571,7 @@ begin
         if vRejected then
         begin
           AResponse.Params.AppendParams(vHeader, rpkHEADER);
-          AResponse.Answer(vStatusCode, vError, rctTEXTPLAIN);
+          AResponse.Answer(vStatusCode, StringRAL(vError), rctTEXTPLAIN);
           Exit;
         end;
         vStatusCode := HTTP_OK;
@@ -581,7 +589,7 @@ begin
 
       {$IFDEF RDW143}
         if Trim(vResult) <> '' then
-          AResponse.Params.AddParam(cUndefined, vResult, rpkBODY);
+          AResponse.Params.AddParam(cUndefined, StringRAL(vResult), rpkBODY);
       {$ELSE}
         if Trim(vResult.Text) <> '' then
           AResponse.Params.AddParam(cUndefined, vResult.Text, rpkBODY);

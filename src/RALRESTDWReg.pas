@@ -10,7 +10,8 @@ uses
     DesignEditors, DesignIntf,
   {$ENDIF}
   Classes, SysUtils,
-  RALRESTDWModule, RALRESTDWServerEvents, RALRESTDWClientEvents, RALTypes;
+  RALRESTDWModule, RALRESTDWServerEvents, RALRESTDWClientEvents,
+  RALRESTDWClient, RALTypes;
 
 type
   { TRALRESTDWServerEventsList }
@@ -56,6 +57,7 @@ procedure Register;
 begin
   RegisterComponents('RAL - RDWModule', [TRALRESTDWServerEvents]);
   RegisterComponents('RAL - RDWModule', [TRALRESTDWClientEvents]);
+  RegisterComponents('RAL - RDWModule', [TRALRESTDWClient]);
   RegisterComponents('RAL - Modules', [TRALRESTDWModule]);
 
   RegisterComponentEditor(TRALRESTDWModule, TRALRESTDWModulesMenu);

@@ -11,10 +11,35 @@ uses
   Classes, SysUtils, DB,
   RALTypes, RALRoutes;
 
+const
+  { A mensagem que o RDW devolve quando a autenticacao falha. O codigo portado
+    a usa direto. }
+  { A versao que o codigo do RDW mostra na tela. Diz o que realmente esta
+    rodando, e nao uma versao do RDW que nao existe mais aqui. }
+  RESTDWVERSAO = 'RESTDW2RAL sobre PascalRAL';
+  cInvalidAuth = 'Invalid authentication';
+  cInvalidLogin = 'Invalid login';
+
 type
+  { O TRESTDWMIMEType do RDW e chamado como classe (TRESTDWMIMEType.GetMIMEType);
+    o do RAL e instancia. Esta casca de uma linha so acerta a forma da chamada. }
+  TRALRESTDWMIMEType = class
+  public
+    class function GetMIMEType(const AFileName: StringRAL): StringRAL;
+  end;
+
   TRALRESTDWTypeObject = (toDataset, toParam, toMassive, toVariable, toObject);
   TRALRESTDWObjectDirection = (odIN, odOUT, odINOUT);
   TRALRESTDWDataMode = (dmDataware, dmRAW);
+  { RDW asked which encoding to put on the wire. RAL speaks UTF-8 on every
+    engine, so the member survives for the .dfm and the value is ignored. }
+  TRALRESTDWEncodeSelect = (esASCII, esUtf8, esANSI);
+  { O ClientSQL do RDW ordena por estes dois. Sairam do RDW 2.1, mas continuam
+    gravados no DFM de quem vem de antes, e sem eles o formulario nao abre. }
+  TRALRESTDWSortOrder = (soAsc, soDesc);
+  TRALRESTDWSortCaseSens = (scYes, scNo);
+  /// TMassiveType do RDW
+  TRALRESTDWMassiveType = (mtMassiveCache, mtMassiveObject);
   TRALRESTDWObjectValue = (ovUnknown,     ovString,          ovSmallint,
                            ovInteger,     ovWord,            ovBoolean,
                            ovFloat,       ovCurrency,        ovBCD,
@@ -67,7 +92,22 @@ function RALRESTDWStrToCurr(const AValue: StringRAL; const ADefault: Currency = 
 function RALRESTDWDateTimeToStr(const AValue: TDateTime): StringRAL;
 function RALRESTDWStrToDateTime(const AValue: StringRAL; const ADefault: TDateTime = 0): TDateTime;
 
+{ Os utilitarios globais que o codigo do RDW chama sem pensar. }
+
+{ O RDW encodava caracteres especiais em %XX para atravessar a URL. Aqui a
+  volta e a mesma, e serve tambem para quem so quer decodificar. }
+function RALRESTDWDecodeStrings(const AValue: StringRAL): StringRAL;
+function RALRESTDWEncodeStrings(const AValue: StringRAL): StringRAL;
+
+{ A primeira posicao de uma string: 1 no Delphi e no FPC em modo Delphi, 0
+  quando o FPC usa strings baseadas em zero. O RDW expoe isso como constante
+  porque o codigo dele indexa string na mao. }
+function RALRESTDWInitStrPos: IntegerRAL;
+
 implementation
+
+uses
+  RALTools, RALMIMETypes;
 
 var
   gFormat: TFormatSettings;
@@ -258,8 +298,14 @@ begin
     ftLargeint                   : Result := ovLargeint;
     ftAutoInc                    : Result := ovAutoInc;
     ftBoolean                    : Result := ovBoolean;
+    { ftExtended e ftSingle so existem no Delphi; no FPC 3.2.2 nem o
+      identificador existe, entao a linha inteira tem de sair }
+    {$IFDEF FPC}
+    ftFloat                      : Result := ovFloat;
+    {$ELSE}
     ftFloat, ftExtended          : Result := ovFloat;
     ftSingle                     : Result := ovSingle;
+    {$ENDIF}
     ftCurrency                   : Result := ovCurrency;
     ftBCD                        : Result := ovBCD;
     ftFMTBcd                     : Result := ovFMTBcd;
@@ -286,6 +332,72 @@ begin
   Result := AValue in [ovBytes, ovVarBytes, ovBlob, ovGraphic, ovParadoxOle,
                        ovDBaseOle, ovTypedBinary, ovOraBlob, ovStream,
                        ovDataSet, ovObject];
+end;
+
+class function TRALRESTDWMIMEType.GetMIMEType(const AFileName: StringRAL): StringRAL;
+begin
+  Result := TRALMIMEType.GetInstance.GetMIMEType(AFileName);
+end;
+
+function RALRESTDWInitStrPos: IntegerRAL;
+begin
+  {$IFDEF FPC}
+    Result := 1;
+  {$ELSE}
+    Result := Low(StringRAL);
+  {$ENDIF}
+end;
+
+function RALRESTDWDecodeStrings(const AValue: StringRAL): StringRAL;
+var
+  vInt1: IntegerRAL;
+  vHex: string;
+  vCod: Integer;
+begin
+  Result := '';
+  vInt1 := 1;
+  while vInt1 <= Length(AValue) do
+  begin
+    if (AValue[vInt1] = '%') and (vInt1 + 2 <= Length(AValue)) then
+    begin
+      vHex := '$' + string(Copy(AValue, vInt1 + 1, 2));
+      vCod := StrToIntDef(vHex, -1);
+      if vCod >= 0 then
+      begin
+        Result := Result + StringRAL(AnsiChar(Byte(vCod)));
+        Inc(vInt1, 3);
+        Continue;
+      end;
+    end;
+
+    if AValue[vInt1] = '+' then
+      Result := Result + ' '
+    else
+      Result := Result + AValue[vInt1];
+    Inc(vInt1);
+  end;
+end;
+
+function RALRESTDWEncodeStrings(const AValue: StringRAL): StringRAL;
+var
+  vInt1: IntegerRAL;
+  vByte: Byte;
+begin
+  Result := '';
+  for vInt1 := 1 to Length(AValue) do
+  begin
+    vByte := Byte(AValue[vInt1]);
+    if (vByte >= 48) and (vByte <= 57) then          // 0-9
+      Result := Result + AValue[vInt1]
+    else if (vByte >= 65) and (vByte <= 90) then     // A-Z
+      Result := Result + AValue[vInt1]
+    else if (vByte >= 97) and (vByte <= 122) then    // a-z
+      Result := Result + AValue[vInt1]
+    else if AValue[vInt1] in ['-', '_', '.', '~'] then
+      Result := Result + AValue[vInt1]
+    else
+      Result := Result + StringRAL('%' + IntToHex(vByte, 2));
+  end;
 end;
 
 end.

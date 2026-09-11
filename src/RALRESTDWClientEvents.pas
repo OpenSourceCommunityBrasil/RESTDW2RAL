@@ -52,10 +52,10 @@ type
     procedure CreateDWParams(AEventName: StringRAL; var AParams: TRALRESTDWParams);
 
     function SendEvent(AEventName: StringRAL; var AParams: TRALRESTDWParams;
-                       var AError: StringRAL; AEventType: TRALRESTDWSendEvent = sePOST;
+                       var AError: string; AEventType: TRALRESTDWSendEvent = sePOST;
                        AsSyncExec: Boolean = False): Boolean; overload;
     function SendEvent(AEventName: StringRAL; var AParams: TRALRESTDWParams;
-                       var AError: StringRAL; var ANativeResult : StringRAL;
+                       var AError: string; var ANativeResult: string;
                        AEventType: TRALRESTDWSendEvent = sePOST;
                        AsSyncExec: Boolean = False): Boolean; overload;
 
@@ -175,18 +175,18 @@ begin
 end;
 
 function TRALRESTDWClientEvents.SendEvent(AEventName: StringRAL;
-  var AParams: TRALRESTDWParams; var AError: StringRAL;
+  var AParams: TRALRESTDWParams; var AError: string;
   AEventType: TRALRESTDWSendEvent; AsSyncExec: Boolean): Boolean;
 var
-  vNativeResult: StringRAL;
+  vNativeResult: string;
 begin
   Result := SendEvent(AEventName, AParams, AError, vNativeResult,
                       AEventType, AsSyncExec);
 end;
 
 function TRALRESTDWClientEvents.SendEvent(AEventName: StringRAL;
-  var AParams: TRALRESTDWParams; var AError: StringRAL;
-  var ANativeResult: StringRAL; AEventType: TRALRESTDWSendEvent;
+  var AParams: TRALRESTDWParams; var AError: string;
+  var ANativeResult: string; AEventType: TRALRESTDWSendEvent;
   AsSyncExec: Boolean): Boolean;
 var
   vEvent: TRALRESTDWEventBase;

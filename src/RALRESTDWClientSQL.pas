@@ -15,7 +15,8 @@ interface
 
 uses
   Classes, SysUtils, DateUtils, DB,
-  RALTypes, RALDBTypes, RALDBConnection,
+  RALTypes, RALDBTypes, RALDBConnection, RALJson, RALRESTDWTypes,
+  RALRESTDWMassive,
   {$IFDEF FPC}
     RALDBBufDataset;
   {$ELSE}
@@ -24,6 +25,17 @@ uses
 
 type
   ERALRESTDWClientSQL = class(Exception);
+
+  { Codigo do RDW manda o lote pela conexao: DataBase.ApplyUpdates(cache,...).
+    O DataBase aqui e tipado como TRALDBConnection, para que quem trabalha ao
+    modo do RAL tambem possa usa-lo, entao o metodo entra por um helper em vez
+    de amarrar a propriedade a casca. Quem aplica e o dataset ligado ao cache,
+    e nao a conexao - por isso funciona para qualquer uma. }
+  TRALDBConnectionRDW = class helper for TRALDBConnection
+  public
+    procedure ApplyUpdates(ACache: TRALRESTDWMassiveCache; var AError: Boolean;
+                           var AMessage: string); overload;
+  end;
 
   /// Mesma forma do TOnEventConnection do RDW
   TRALRESTDWDataError = procedure(ASuccess: Boolean; const AError: StringRAL) of object;
@@ -52,10 +64,33 @@ type
     FResponseDone: boolean;
     FLastError: StringRAL;
     FMasterFields: StringRAL;
+    FAutoRefreshOnFilterChanged: boolean;
+    FAutoSortOnOpen: boolean;
+    FBinaryRequest: boolean;
+    FDataCache: boolean;
+    FDatapacks: IntegerRAL;
+    FMassiveType: TRALRESTDWMassiveType;
+    FMasterCascadeDelete: boolean;
+    FSequenceField: StringRAL;
+    FSequenceName: StringRAL;
+    FSortCaseSens: TRALRESTDWSortCaseSens;
+    FSortFields: StringRAL;
+    FSortOrder: TRALRESTDWSortOrder;
+    FMassiveCache: TRALRESTDWMassiveCache;
     FMasterSource: TDataSource;
     FOnGetDataError: TRALRESTDWDataError;
     FOnErrorUser: TRALDBTableOnError;
 
+    { SortFields + SortOrder + SortCaseSens viram o IndexFieldNames do memtable,
+      que e onde o RAL guarda ordenacao. }
+    procedure AplicarOrdenacao;
+    procedure SetMassiveCache(AValue: TRALRESTDWMassiveCache);
+    /// repassados ao MassiveCache, que nao enxerga este pacote
+    function ContarPendentes: IntegerRAL;
+    procedure AplicarPendentes(var AError: Boolean; var AMessage: string);
+    procedure SetSortFields(const AValue: StringRAL);
+    procedure SetSortOrder(AValue: TRALRESTDWSortOrder);
+    procedure SetSortCaseSens(AValue: TRALRESTDWSortCaseSens);
     function GetDataBase: TRALDBConnection;
     procedure SetDataBase(AValue: TRALDBConnection);
     function GetUpdateTableName: StringRAL;
@@ -91,15 +126,77 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
-    procedure ApplyUpdates; reintroduce;
-    procedure ExecSQL; reintroduce;
+    procedure ApplyUpdates; reintroduce; overload;
+    { A forma do RDW: devolve False e a mensagem em vez de levantar excecao. }
+    function ApplyUpdates(var AError: string): Boolean; reintroduce; overload;
+    { Quantas alteracoes esperam para ser enviadas. No RDW vinha do buffer
+      massivo; aqui e o cache do proprio dataset, que e onde elas estao. }
+    function MassiveCount: IntegerRAL;
+    { Um resumo do que esta pendente, para diagnostico - nao e o formato que
+      viaja. O lote do RAL vai binario pelo TRALDBSQLCache, e nao ha JSON
+      equivalente ao do RDW para devolver aqui. }
+    function MassiveToJSON: StringRAL;
+    procedure ExecSQL; reintroduce; overload;
+    { A forma do RDW: devolve False e a mensagem em vez de levantar excecao.
+      Respeita o RaiseErrors do componente - com ele desligado o erro ja vinha
+      por aqui de qualquer jeito. }
+    function ExecSQL(var AError: string): Boolean; reintroduce; overload;
     /// Fecha e reabre, refazendo a consulta no servidor
     procedure RefreshData;
     /// Copia os campos do master para os params de mesmo nome
     procedure ApplyMasterParams;
+
+    { Enche o dataset com um JSON, sem servidor nenhum - o mesmo OpenJson do
+      TRESTDWClientSQL. Aceita um array de objetos ou um objeto so, e cria os
+      campos a partir das chaves do primeiro elemento quando o dataset ainda
+      nao tem estrutura.
+
+      E o que faz um cliente REST puro continuar funcionando: consulta uma API
+      qualquer com Get e joga a resposta aqui. }
+    procedure OpenJson(const AJson: StringRAL);
   published
     /// A conexao com o TRALDBModule do servidor - o DataBase do RDW
     property DataBase: TRALDBConnection read GetDataBase write SetDataBase;
+
+    { --- ordenacao: vira o IndexFieldNames do memtable --- }
+    { O cache de alteracoes. No RAL ele ja e o do proprio dataset, entao apontar
+      o componente so serve para o codigo do RDW continuar consultando
+      MassiveCount e mandando ApplyUpdates por ele. }
+    property MassiveCache: TRALRESTDWMassiveCache read FMassiveCache
+      write SetMassiveCache;
+    property SortFields: StringRAL read FSortFields write SetSortFields;
+    property SortOrder: TRALRESTDWSortOrder read FSortOrder write SetSortOrder
+      default soAsc;
+    property SortCaseSens: TRALRESTDWSortCaseSens read FSortCaseSens
+      write SetSortCaseSens default scYes;
+    /// Aplica a ordenacao sozinho depois de cada abertura
+    property AutoSortOnOpen: boolean read FAutoSortOnOpen write FAutoSortOnOpen
+      default True;
+
+    { --- aceitos e inertes ---
+      Existem para o formulario abrir e para o codigo que os le continuar
+      compilando. Cada um diz ao lado por que nao faz nada; quem avisa em cima
+      do projeto e o conversor. }
+    property AutoRefreshOnFilterChanged: boolean read FAutoRefreshOnFilterChanged
+      write FAutoRefreshOnFilterChanged default False;
+      // inerte: o filtro do RAL e local, nao refaz a consulta no servidor
+    property BinaryRequest: boolean read FBinaryRequest write FBinaryRequest
+      default True;
+      // inerte: o dataset do RAL ja viaja binario, pelo TRALStorageBIN
+    property DataCache: boolean read FDataCache write FDataCache default False;
+      // inerte: nao ha cache de resultado entre aberturas
+    property Datapacks: IntegerRAL read FDatapacks write FDatapacks default -1;
+      // inerte: o RAL traz o resultado inteiro, sem paginacao por pacote
+    property MassiveType: TRALRESTDWMassiveType read FMassiveType
+      write FMassiveType default mtMassiveCache;
+      // inerte: o buffer massivo do RDW nao tem equivalente (ver o LEIAME)
+    property MasterCascadeDelete: boolean read FMasterCascadeDelete
+      write FMasterCascadeDelete default False;
+      // inerte: cascata quem resolve e o banco, pela constraint
+    property SequenceName: StringRAL read FSequenceName write FSequenceName;
+      // inerte: o RAL nao busca generator antes do insert
+    property SequenceField: StringRAL read FSequenceField write FSequenceField;
+      // inerte: idem; use um trigger ou um campo auto-incremento
     /// Tabela usada para montar insert/update/delete - o UpdateTableName do RDW
     property UpdateTableName: StringRAL read GetUpdateTableName write SetUpdateTableName;
     { Com False, cada Post e cada Delete vao ao servidor na hora. Com True (o
@@ -138,6 +235,21 @@ type
 
 implementation
 
+{ TRALDBConnectionRDW }
+
+procedure TRALDBConnectionRDW.ApplyUpdates(ACache: TRALRESTDWMassiveCache;
+  var AError: Boolean; var AMessage: string);
+begin
+  if ACache = nil then
+  begin
+    AError := True;
+    AMessage := 'ApplyUpdates sem MassiveCache';
+    Exit;
+  end;
+
+  ACache.Aplicar(AError, AMessage);
+end;
+
 { TRALRESTDWClientSQL }
 
 constructor TRALRESTDWClientSQL.Create(AOwner: TComponent);
@@ -155,6 +267,13 @@ begin
   FWaiting := False;
   FResponseDone := False;
 
+  FSortOrder := soAsc;
+  FSortCaseSens := scYes;
+  FAutoSortOnOpen := True;
+  FBinaryRequest := True;
+  FDatapacks := -1;
+  FMassiveType := mtMassiveCache;
+
   FMasterSource := TDataSource.Create(Self);
   FMasterSource.OnDataChange := {$IFDEF FPC}@{$ENDIF}MasterChanged;
 
@@ -168,6 +287,124 @@ begin
   FMasterSource.OnDataChange := nil;
   FreeAndNil(FMasterSource);
   inherited Destroy;
+end;
+
+{ SortFields e uma lista separada por ponto-e-virgula, igual nos dois lados; o
+  que muda e como cada base marca direcao e caixa. No FireDAC os modificadores
+  vao no proprio IndexFieldNames (:D e :C); o TBufDataset do FPC nao os tem, e
+  ali a ordenacao sai sempre ascendente e sensivel a caixa. }
+procedure TRALRESTDWClientSQL.SetMassiveCache(AValue: TRALRESTDWMassiveCache);
+begin
+  if FMassiveCache = AValue then
+    Exit;
+
+  if FMassiveCache <> nil then
+    FMassiveCache.Desligar(Self);
+
+  FMassiveCache := AValue;
+
+  if FMassiveCache <> nil then
+    FMassiveCache.Ligar(Self, {$IFDEF FPC}@{$ENDIF}ContarPendentes,
+                        {$IFDEF FPC}@{$ENDIF}AplicarPendentes);
+end;
+
+function TRALRESTDWClientSQL.ContarPendentes: IntegerRAL;
+begin
+  if Active then
+    Result := ChangeCount
+  else
+    Result := 0;
+end;
+
+procedure TRALRESTDWClientSQL.AplicarPendentes(var AError: Boolean;
+  var AMessage: string);
+begin
+  AError := False;
+  AMessage := '';
+  try
+    Self.ApplyUpdates();
+  except
+    on E: Exception do
+    begin
+      AError := True;
+      AMessage := E.Message;
+    end;
+  end;
+end;
+
+procedure TRALRESTDWClientSQL.AplicarOrdenacao;
+var
+  vCampos: TStringList;
+  vInt1: IntegerRAL;
+  vNome: StringRAL;
+begin
+  if not Active then
+    Exit;
+
+  if Trim(FSortFields) = '' then
+  begin
+    IndexFieldNames := '';
+    Exit;
+  end;
+
+  vCampos := TStringList.Create;
+  try
+    vCampos.StrictDelimiter := True;
+    vCampos.Delimiter := ';';
+    vCampos.DelimitedText := FSortFields;
+
+    vNome := '';
+    for vInt1 := 0 to vCampos.Count - 1 do
+    begin
+      if Trim(vCampos[vInt1]) = '' then
+        Continue;
+
+      if vNome <> '' then
+        vNome := vNome + ';';
+      vNome := vNome + Trim(vCampos[vInt1]);
+
+      {$IFNDEF FPC}
+      if FSortOrder = soDesc then
+        vNome := vNome + ':D';
+      if FSortCaseSens = scNo then
+        vNome := vNome + ':C';
+      {$ENDIF}
+    end;
+
+    IndexFieldNames := vNome;
+  finally
+    FreeAndNil(vCampos);
+  end;
+end;
+
+procedure TRALRESTDWClientSQL.SetSortFields(const AValue: StringRAL);
+begin
+  if FSortFields = AValue then
+    Exit;
+
+  FSortFields := AValue;
+  if not (csLoading in ComponentState) then
+    AplicarOrdenacao;
+end;
+
+procedure TRALRESTDWClientSQL.SetSortOrder(AValue: TRALRESTDWSortOrder);
+begin
+  if FSortOrder = AValue then
+    Exit;
+
+  FSortOrder := AValue;
+  if not (csLoading in ComponentState) then
+    AplicarOrdenacao;
+end;
+
+procedure TRALRESTDWClientSQL.SetSortCaseSens(AValue: TRALRESTDWSortCaseSens);
+begin
+  if FSortCaseSens = AValue then
+    Exit;
+
+  FSortCaseSens := AValue;
+  if not (csLoading in ComponentState) then
+    AplicarOrdenacao;
 end;
 
 function TRALRESTDWClientSQL.GetDataBase: TRALDBConnection;
@@ -211,6 +448,141 @@ begin
   FMasterFields := AValue;
   if Active then
     RefreshData;
+end;
+
+function TRALRESTDWClientSQL.ApplyUpdates(var AError: string): Boolean;
+begin
+  AError := '';
+  Result := True;
+  try
+    Self.ApplyUpdates();
+  except
+    on E: Exception do
+    begin
+      AError := E.Message;
+      Result := False;
+    end;
+  end;
+end;
+
+function TRALRESTDWClientSQL.MassiveCount: IntegerRAL;
+begin
+  Result := ContarPendentes;
+end;
+
+function TRALRESTDWClientSQL.MassiveToJSON: StringRAL;
+begin
+  Result := StringRAL(Format('{"table":"%s","pending":%d}',
+                             [GetUpdateTableName, ContarPendentes]));
+end;
+
+function TRALRESTDWClientSQL.ExecSQL(var AError: string): Boolean;
+begin
+  AError := '';
+  Result := True;
+  try
+    Self.ExecSQL();
+  except
+    on E: Exception do
+    begin
+      AError := E.Message;
+      Result := False;
+    end;
+  end;
+end;
+
+procedure TRALRESTDWClientSQL.OpenJson(const AJson: StringRAL);
+var
+  vRaiz, vItem: TRALJSONValue;
+  vObjeto: TRALJSONObject;
+  vLista: TRALJSONArray;
+  vInt1, vInt2, vTotal: IntegerRAL;
+  vNome: StringRAL;
+  vCampo: TField;
+  vValor: TRALJSONValue;
+begin
+  Close;
+
+  vRaiz := TRALJSON.ParseJSON(AJson);
+  if vRaiz = nil then
+    raise ERALRESTDWClientSQL.Create('OpenJson: conteudo nao e um JSON valido');
+
+  try
+    { um objeto solto vale como uma linha so - e o que APIs de consulta por
+      chave costumam devolver, e o caso da demo de CNPJ }
+    vLista := nil;
+    if vRaiz is TRALJSONArray then
+      vLista := TRALJSONArray(vRaiz);
+
+    if (vLista <> nil) and (vLista.Count = 0) then
+    begin
+      if FieldDefs.Count > 0 then
+        CreateDataSet;
+      Exit;
+    end;
+
+    if vLista <> nil then
+      vItem := vLista.Get(0)
+    else
+      vItem := vRaiz;
+
+    if not (vItem is TRALJSONObject) then
+      raise ERALRESTDWClientSQL.Create('OpenJson: esperado objeto ou array de objetos');
+
+    { sem estrutura definida, os campos saem das chaves do primeiro elemento.
+      Tudo entra como texto largo de proposito: adivinhar o tipo por uma linha
+      erra na segunda, e o dataset e so o transporte para a tela. }
+    if FieldDefs.Count = 0 then
+    begin
+      vObjeto := TRALJSONObject(vItem);
+      for vInt1 := 0 to vObjeto.Count - 1 do
+        FieldDefs.Add(string(vObjeto.GetName(vInt1)), ftString, 4096);
+    end;
+
+    CreateDataSet;
+
+    if vLista = nil then
+      vTotal := 1
+    else
+      vTotal := vLista.Count;
+
+    for vInt1 := 0 to vTotal - 1 do
+    begin
+      if vLista <> nil then
+        vItem := vLista.Get(vInt1)
+      else
+        vItem := vRaiz;
+
+      if not (vItem is TRALJSONObject) then
+        Continue;
+
+      vObjeto := TRALJSONObject(vItem);
+      Append;
+      try
+        for vInt2 := 0 to vObjeto.Count - 1 do
+        begin
+          vNome := vObjeto.GetName(vInt2);
+          vCampo := FindField(string(vNome));
+          if vCampo = nil then
+            Continue;
+
+          vValor := vObjeto.Get(vInt2);
+          if (vValor = nil) or vValor.IsNull then
+            vCampo.Clear
+          else
+            vCampo.AsString := string(vValor.AsString);
+        end;
+        Post;
+      except
+        Cancel;
+        raise;
+      end;
+    end;
+
+    First;
+  finally
+    FreeAndNil(vRaiz);
+  end;
 end;
 
 procedure TRALRESTDWClientSQL.ApplyMasterParams;
@@ -294,7 +666,7 @@ begin
   inherited InternalPost;
 
   if CommitOnChange and (not FApplying) then
-    ApplyUpdates;
+    Self.ApplyUpdates();
 end;
 
 procedure TRALRESTDWClientSQL.InternalDelete;
@@ -302,7 +674,7 @@ begin
   inherited InternalDelete;
 
   if CommitOnChange and (not FApplying) then
-    ApplyUpdates;
+    Self.ApplyUpdates();
 end;
 
 procedure TRALRESTDWClientSQL.ExecSQL;

@@ -41,6 +41,11 @@ contains
   RALRESTDWTypes in '..\..\src\RALRESTDWTypes.pas',
   RALRESTDWClientEvents in '..\..\src\RALRESTDWClientEvents.pas',
   RALRESTDWEvents in '..\..\src\RALRESTDWEvents.pas',
-  RALRESTDWCompat in '..\..\src\RALRESTDWCompat.pas';
+  RALRESTDWCompat in '..\..\src\RALRESTDWCompat.pas',
+  RALRESTDWOptions in '..\..\src\RALRESTDWOptions.pas',
+  RALRESTDWDataModule in '..\..\src\RALRESTDWDataModule.pas',
+  RALRESTDWClient in '..\..\src\RALRESTDWClient.pas',
+  RALRESTDWMassive in '..\..\src\RALRESTDWMassive.pas',
+  RALRESTDWServerContext in '..\..\src\RALRESTDWServerContext.pas';
 
 end.

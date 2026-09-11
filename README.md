@@ -26,6 +26,7 @@ assinatura** ficam idênticos.
 ## Índice
 
 - [Migrar em três passos](#migrar-em-três-passos)
+  - [Por que existem as "cascas"](#por-que-existem-as-cascas)
   - [Os dois lados migram igual](#os-dois-lados-migram-igual)
 - [Requisitos e instalação](#requisitos-e-instalação)
 - [Os três componentes](#os-três-componentes)
@@ -64,15 +65,68 @@ nomes que o seu código usa, inclusive os valores dos enums.
 | `TRESTDWServerEvents` | `TRALRESTDWServerEvents` |
 | `TRESTDWClientEvents` | `TRALRESTDWClientEvents` |
 
-**3. Troque o transporte.** No lugar do pooler/servidor do RDW entram componentes do RAL:
+**3. Troque a classe do transporte.** Também busca e substituição, porque do outro lado
+há uma classe com **a mesma cara do pooler do RDW**:
 
-| lado | no RDW | aqui |
-| --- | --- | --- |
-| servidor | o pooler/servidor do RDW | `TRALServer` (o engine) + `TRALRESTDWModule` apontando para o DataModule |
-| cliente | `TRESTClientPooler` | `TRALClient` — e a propriedade `RESTClientPooler` do ClientEvents vira `RALClient` |
+| no formulário | vira |
+| --- | --- |
+| `TRESTDWIdServicePooler`, `TRESTDWIcsServicePooler` | `TRALRESTDWIndyServicePooler` |
+| `TRESTDWIdClientPooler`, `TRESTDWIdClientREST` | `TRALRESTDWClient` |
+| `TRESTDWIdDatabase` | `TRALRESTDWDatabase` |
+| `TRESTDWPoolerDB` | `TRALRESTDWPoolerDB` |
+| `TRESTDWFireDACDriver` | `TRALRESTDWFireDACDriver` |
+| `TRESTDWMassiveCache` | `TRALRESTDWMassiveCache` |
+| `TRESTDWServerContext` | `TRALRESTDWServerContext` |
+| `TRESTDWAuthBasic` | `TRALServerBasicAuth` |
+
+`ServicePort`, `RootPath`, `ServerMethodClass`, `Host`, `Port`, `UseSSL`,
+`AuthenticationOptions.OptionParams.Username`, `CriptOptions`, `CORS_CustomHeaders` —
+todos continuam existindo, com o mesmo nome, e por dentro viram o que o RAL entende.
+Nenhuma propriedade sai do formulário, nenhuma linha de código muda.
 
 **O corpo dos seus handlers não muda.** Nem os nomes dos parâmetros, nem os acessores
 `As*`, nem o `Result`, nem o `ItemsString`.
+
+### Por que existem as "cascas"
+
+Um conversor consegue reescrever um `.dfm`. Reescrever **código** ele não consegue com
+segurança — e o pooler do RDW é usado em código o tempo todo. Nas demos oficiais do RDW,
+`AuthenticationOptions.OptionParams` aparece 40 vezes, `Active` 26, `RootPath` 9,
+`ServerMethodClass` 5.
+
+Por isso o projeto tem uma classe com a cara de cada transporte do RDW, com o RAL
+implementado por dentro. O conversor só troca o nome; o de/para acontece em tempo de
+execução:
+
+| você escreve (RDW) | a casca faz (RAL) |
+| --- | --- |
+| `ServicePort := 8082` | `Port := 8082` |
+| `RootPath := '/api/'` | `Domain` do módulo interno |
+| `ServerMethodClass := TDM` | `RegisterClass(TDM)` + `ClassModule := 'TDM'` |
+| `Host`, `Port`, `UseSSL` | uma `BaseURL` só |
+| `PoolerService`, `PoolerPort` | idem, no `TRALClient` interno da conexão |
+| `DataRoute := '/datadm/'` | `ModuleRoute` da conexão |
+| `AuthenticationOptions...Username` | um `TRALClientBasicAuth` em `Authentication` |
+| `AuthOptions.GetToken(payload)` | um JWT HS256 assinado, que o `TRALServerJWTAuth` valida |
+| `CriptOptions.Use/Key` | `CriptoOptions.CriptType/Key` |
+| `CORS_CustomHeaders` | `CORSOptions.AllowOrigin` e `.AllowHeaders` |
+| `PathTraversalRaiseError` | `Security.Options` |
+| `SSLCertFile` e afins | `SSL.SSLOptions.*` |
+| `DWClientREST.Get(url, hdr, resp)` | uma requisição pelo `TRALClient`, devolvendo o código HTTP |
+| `ClientSQL.OpenJson(texto)` | os campos saem das chaves do JSON e o dataset é preenchido |
+| `DataBase.GetKeyFieldNames(tab, lista)` | pergunta a estrutura ao servidor e lê a marca de chave |
+| `MassiveCache.MassiveCount` | quantas alterações o cache do dataset tem para enviar |
+| `SortFields`, `SortOrder` | `IndexFieldNames` do memtable |
+
+O que o RAL não tem — `FailOver`, `ProxyOptions`, `ThreadRequest`, `Encoding`,
+`ForceWelcomeAccess` — continua **publicado e inerte**: o formulário abre, o código
+compila, e cada membro diz ao lado do próprio código por que não faz nada. Publicar é
+obrigatório, e não gentileza: o leitor de DFM para na primeira propriedade que a classe
+não tem e leva o formulário inteiro junto.
+
+Uma casca por **motor do RAL**, e não por transporte do RDW: quem escolhe o motor é quem
+migra. Hoje existe a do Indy (`TRALRESTDWIndyServicePooler`); o conversor lista os
+outros motores e avisa quando ainda não há casca.
 
 ### Os dois lados migram igual
 
@@ -113,8 +167,19 @@ compile e **Install**. Adicione `src` ao *Library Path*.
 **Lazarus:** instale `pascalral` e `pascalraldsgn`, depois `pkg/lazarus/RALRESTDW.lpk` →
 **Use → Install**.
 
-A paleta ganha **RAL - RDWModule** (`TRALRESTDWServerEvents`, `TRALRESTDWClientEvents`) e
-**RAL - Modules** (`TRALRESTDWModule`).
+A paleta ganha **RAL - RDWModule** (`TRALRESTDWServerEvents`, `TRALRESTDWClientEvents`,
+`TRALRESTDWClient`) e **RAL - Modules** (`TRALRESTDWModule`).
+
+### Três pacotes, e por quê
+
+| pacote | o que traz | do que depende |
+| --- | --- | --- |
+| `RALRESTDW` | eventos, params, o cliente, o DataModule, massive, contexto | só do PascalRAL |
+| `RALRESTDWDB` | `TRALRESTDWClientSQL`, `TRALRESTDWDatabase`, `TRALRESTDWPoolerDB` | link de banco do RAL |
+| `RALRESTDWIndy` | `TRALRESTDWIndyServicePooler` | `IndyRAL` |
+
+A separação existe para ninguém carregar o que não usa: quem só é cliente de eventos
+não puxa FireDAC nem Indy junto.
 
 ### O pacote de banco, separado
 
@@ -455,20 +520,36 @@ callback, para que o seu `try..except` em volta do `Open` funcione.
 
 ## Conversor de projetos
 
-`ferramentas/conversor` é um utilitário de console que faz o trabalho mecânico:
+`ferramentas/conversor` faz o trabalho mecânico. Tem **janela**
+(`ferramentas/conversor/gui`) e linha de comando, as duas sobre o mesmo motor:
 
 ```
-rdw2ral <pasta>              # simula e mostra o relatório
+rdw2ral <pasta>                        # simula e mostra o relatório
 rdw2ral <pasta> --aplicar --backup
+rdw2ral --servidores                   # os motores do RAL desta máquina
 ```
 
-Tem **janela** (`ferramentas/conversor/gui`) e linha de comando, as duas sobre o mesmo motor.
-Na janela: escolhe a pasta, clica em Simular, vê o que mudaria, e só então aplica.
+Na janela: escolhe a pasta, **escolhe o motor do RAL**, clica em Simular, vê o que
+mudaria, e só então aplica. A lista de motores sai do registro do Delphi, com os que
+você tem instalados na frente — não é um catálogo fixo.
 
-Ele tira do `uses` toda unit que comece com `uRESTDW` ou `uDW`, põe `RALRESTDWCompat` no
-lugar, e renomeia no `.dfm`/`.lfm` as classes dos componentes e as propriedades que
-mudaram de nome. Não encosta no corpo do seu código — com a unit de compatibilidade, ele
-não precisa.
+O que ele faz é pouco, de propósito, porque as cascas fazem o resto:
+
+- tira do `uses` toda unit que comece com `uRESTDW` ou `uDW` e põe `RALRESTDWCompat`
+  (mais a unit do motor escolhido, quando há transporte no arquivo);
+- troca no `.dfm`/`.lfm` **só o nome da classe** dos componentes — nenhuma propriedade
+  é alterada ou descartada;
+- troca o tipo do campo correspondente no `.pas`, para os dois casarem;
+- acrescenta `RegisterClass(TSeuDataModule)`, que é como o módulo acha a classe;
+- converte o formato antigo de `Routes = [crAll]` para `Routes.All.Active`, que é a
+  forma do RDW 2.1 e a daqui;
+- avisa quando o projeto usa a assinatura do RDW 1.4.3 (`var Result: String`), que pede
+  a diretiva `RDW143`;
+- avisa, um a um, os componentes sem equivalente (`TRESTDWPoolerDB`,
+  `TRESTDWIdDatabase`, `TRESTDWMassiveCache`, `TRESTDWServerContext`…).
+
+Ele **não** mexe no corpo do seu código: com a unit de compatibilidade e as cascas, não
+precisa.
 
 Trabalha em bytes e nunca decodifica, então fonte em CP1252 não vira mojibake; e só troca
 identificador isolado, então o componente `RESTDWClientSQL1` e o handler
@@ -515,8 +596,15 @@ do mesmo evento.
 | --- | --- |
 | `TRESTDWServerEvents` | `TRALRESTDWServerEvents` |
 | `TRESTDWClientEvents` | `TRALRESTDWClientEvents` |
-| pooler / servidor | `TRALServer` + `TRALRESTDWModule` |
-| `TRESTClientPooler` | `TRALClient` |
+| `TRESTDWIdServicePooler`, `TRESTDWIcsServicePooler` | `TRALRESTDWIndyServicePooler` |
+| `TRESTDWIdClientPooler`, `TRESTDWIdClientREST`, `TRESTClientPooler` | `TRALRESTDWClient` |
+| `TRESTDWAuthBasic` | `TRALServerBasicAuth` |
+| `TServerMethodDataModule` | `TRALRESTDWDataModule` |
+| `TRESTDWClientInfo` | `TRALRESTDWClientInfo` |
+| `TRESTDWAuthOption` / `TRESTDWAuthOptionBasic` | `TRALRESTDWAuthOption` / `TRALRESTDWAuthOptionBasic` |
+| `TRequestType` (`rtGet`, `rtPost`…) | `TRALMethod` (`amGET`, `amPOST`…) |
+| `TEncodeSelect` (`esUtf8`…) | `TRALRESTDWEncodeSelect` |
+| `TRESTDWJSONValue` | `TRALRESTDWJSONParam` |
 | `TRESTDWParams` / `TDWParams` | `TRALRESTDWParams` |
 | `TRESTDWJSONParam` | `TRALRESTDWJSONParam` |
 | `TRESTDWParamsMethods` / `TRESTDWParamMethod` | `TRALRESTDWParamsMethods` / `TRALRESTDWParamMethod` |
@@ -533,8 +621,14 @@ do mesmo evento.
 | `Params.RawBody` | `Params.RawBody` |
 
 Todos os nomes da coluna da esquerda continuam valendo se você usar `RALRESTDWCompat` — é
-para isso que ela existe. Ela também re-exporta `StringRAL`, `IntegerRAL` e `Int64RAL`, que
-aparecem nas assinaturas do `OnAuthRequest` e do `OnReplyEventByType`.
+para isso que ela existe. Ela também re-exporta `StringRAL`, `IntegerRAL` e `Int64RAL`.
+
+> **`var` de string é sempre `String`.** `StringRAL` é `UTF8String`, um byte por
+> caractere; o `String` do Delphi moderno tem dois. Em parâmetro `var` o compilador não
+> converte, e no caso dos handlers ligados pelo DFM — que casam por nome, sem conferir
+> assinatura — nem erro daria: daria texto corrompido na primeira chamada. Por isso
+> `SendEvent(..., var AError)`, `OnAuthRequest` e o `Result` do `RDW143` usam `String`,
+> exatamente como o RDW declara.
 
 ---
 
@@ -591,15 +685,55 @@ servidor e depois o cliente. O servidor loga as rotas que descobriu sozinho:
 - **`toMassive` não tem implementação.** O `MassiveDataset` do RDW (buffer de alterações
   para aplicar em lote) não tem equivalente aqui. Para escrita em lote, use o
   `TRALDBModule` do RAL.
-- **O nome da classe dentro do DFM/LFM tem que ser trocado na mão.** Nenhuma unit de
-  compatibilidade resolve isso: o formulário guarda o nome real da classe.
+- **O nome da classe dentro do DFM/LFM tem que ser trocado.** Nenhuma unit de
+  compatibilidade resolve isso — o formulário guarda o nome real da classe — e é
+  justamente o que o conversor faz.
+- **Casca de servidor só para o Indy, por enquanto.** `TRALRESTDWIndyServicePooler`
+  existe; Synopse, Sagui e UniGUI aparecem na lista do conversor marcados como sem
+  casca. A regra do de/para já está fora da casca (`RALRESTDWOptions`), então cada motor
+  novo é um arquivo fino.
+- **O gancho por registro do massive não é disparado.** Acumular as alterações e mandar
+  em lote funciona — é o `CacheUpdateRecords` mais o `ApplyUpdates`, e `MassiveCount`,
+  `MassiveToJSON` e `DataBase.ApplyUpdates(cache, …)` passam por ali de verdade. O que
+  não existe é o `OnMassiveProcess`: o laço que aplica cada linha mora dentro do
+  `TRALDBModule`, no PascalRAL, e este projeto não mexe no RAL. Os eventos são
+  declarados (senão o formulário não abre e o método não compila) e **nunca chamados**;
+  o conversor reporta cada um. Código que atribuía sequência ou vetava registro ali
+  precisa mudar de lugar — para um trigger, para o próprio `SQL`, ou para um evento
+  chamado antes do `ApplyUpdates`.
+- **Sem lista de servidores de reserva.** `FailOver`, `FailOverConnections` e os eventos
+  de failover são aceitos e inertes: o RAL não troca de servidor sozinho.
+- **`TRESTDWMassiveBuffer` e `TRESTDWUpdateSQL`** continuam sem equivalente, e o
+  conversor aponta cada ocorrência.
 - **Sem `CriptOptions` por parâmetro.** A criptografia no RAL é configurada no
   servidor/cliente e vale para a requisição inteira (`CriptoOptions`), o que cobre o mesmo
   caso com menos peça.
 - **Sem `DatabaseCharSet`, `Encoding` e `Url_Redirect`** no container de parâmetros.
 - **`CallbackEvent` é publicado e propagado** para a rota do RAL, mas não há um mecanismo de
   callback pronto como o do RDW.
-- A demo Lazarus não foi compilada aqui — só a Delphi foi validada ponta a ponta.
+- **O Lazarus não foi compilado.** As units estão nos pacotes
+  (`pkg/lazarus/RALRESTDW.lpk` e `RALRESTDWIndy.lpk`), mas a validação ponta a ponta
+  feita até aqui foi toda no Delphi 12.
+
+### O que já foi verificado em demo real do RDW
+
+As seis demos oficiais do REST Dataware, convertidas e compiladas contra o RAL:
+
+| demo | o que exercita | resultado |
+| --- | --- | --- |
+| `SimpleServer` | servidor, formato RDW 1.4.3 | converte, compila e **responde**: GET/DELETE 200, POST/PUT/PATCH 201, rota inexistente 404 |
+| `FileTransfer/Server` | servidor, formato RDW 2.1, `TRESTDWAuthBasic` | converte e compila |
+| `FileTransfer/Client` | cliente com basic auth montada em código | converte e compila |
+| `FullServer` | servidor grande: pooler de banco, driver FireDAC, contexto, token, massive | converte e compila |
+| `FullClient` | cliente com banco sobre REST, massive cache, failover, bearer | converte e compila |
+| `ConsultaCNPJ` | cliente REST cru: `Get` numa API externa e `OpenJson` | converte e compila |
+
+Em todas, a única mudança no formulário foi o **nome da classe**: nenhuma propriedade do
+RDW foi alterada ou descartada.
+
+Nos dois compiladores: Delphi 12 (units com e sem `RDW143`, os três pacotes contra o
+`.dcp` instalado, as seis demos) e Lazarus 3 / FPC 3.2.2 (os três pacotes e a demo
+cliente).
 
 ---
 
