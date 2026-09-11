@@ -2,17 +2,45 @@
 
 Faz o trabalho mecânico da migração do REST Dataware para o RESTDW2RAL.
 
+Vem em duas formas, **com a mesma regra por baixo**: `uConversor.pas` tem todo o
+motor, e os dois programas são só a casca. Mexeu na regra, mexeu para os dois.
+
+| | |
+| --- | --- |
+| `gui/rdw2ralgui.dpr` | **janela** — escolha a pasta, simule, veja o que muda, aplique |
+| `rdw2ral.dpr` | linha de comando, para script e automação |
+
 ## Compilar
 
-Console, sem dependência nenhuma além da RTL:
+Nenhuma dependência além da RTL e da VCL:
 
 ```
-dcc32 rdw2ral.dpr
+dcc32 gui\rdw2ralgui.dpr      # a janela
+dcc32 rdw2ral.dpr             # o console
 ```
 
 Ou abra o `.dpr` no Delphi e compile.
 
-## Usar
+## A janela
+
+É o caminho recomendado, porque o fluxo seguro fica óbvio em vez de depender de você
+lembrar de um argumento:
+
+1. **Escolha a pasta** — pelo botão, ou arraste a pasta para dentro da janela.
+2. **Simular** — nada é gravado. A lista mostra cada arquivo que mudaria e quantas
+   alterações; o painel de baixo mostra os avisos. Duplo clique num arquivo abre a
+   pasta dele no Explorer.
+3. **Aplicar** — só habilita depois de uma simulação que achou algo, e pede
+   confirmação. Se você tiver desmarcado o `.bak`, o aviso diz isso na cara.
+
+Os avisos vêm marcados: `[uses]` é unit do RDW removida, `[nome]` é classe ou
+propriedade renomeada, e **`[ATENCAO]`** é o que o conversor não sabe converter e
+precisa de decisão sua. A barra de status conta quantos `[ATENCAO]` apareceram.
+
+A janela também aceita a pasta como argumento, então dá para chamá-la de um atalho
+ou do menu "Enviar para" do Windows.
+
+## A linha de comando
 
 ```
 rdw2ral <pasta ou arquivo> [opções]

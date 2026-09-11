@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Both halves matter equally: the server side (`TRALRESTDWModule` + `TRALRESTDWServerEvents`) and the client side (`TRALRESTDWClientEvents`). A change that only serves one of them is half a change.
 
-It ships **two packages per compiler**. `RALRESTDW` is the events half and depends only on PascalRAL; `RALRESTDWDB` adds `TRALRESTDWClientSQL` and depends on a RAL database link (`RALDBFireDACLink` on Delphi, `raldbsqldblink` on Lazarus) - split on purpose, so an events-only user does not drag FireDAC in. There is also `ferramentas/conversor`, a standalone console tool that rewrites a RDW project's `uses` and form class names.
+It ships **two packages per compiler**. `RALRESTDW` is the events half and depends only on PascalRAL; `RALRESTDWDB` adds `TRALRESTDWClientSQL` and depends on a RAL database link (`RALDBFireDACLink` on Delphi, `raldbsqldblink` on Lazarus) - split on purpose, so an events-only user does not drag FireDAC in. There is also `ferramentas/conversor`, which rewrites a RDW project's `uses` and form class names: `uConversor.pas` holds every rule, and `rdw2ral.dpr` (console) and `gui/rdw2ralgui.dpr` (window) are two shells over it - **change the rule in the unit, never in one of the shells**, or the two drift apart. The window is the path a migrating user is meant to take; the console is for scripting.
 
 It is an IDE component package, not an application: no `main`, **no test suite and no CI** (`.github/` holds only `FUNDING.yml`). Ten units in `src/`, demos under `exemplo/`.
 

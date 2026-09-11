@@ -462,6 +462,9 @@ rdw2ral <pasta>              # simula e mostra o relatório
 rdw2ral <pasta> --aplicar --backup
 ```
 
+Tem **janela** (`ferramentas/conversor/gui`) e linha de comando, as duas sobre o mesmo motor.
+Na janela: escolhe a pasta, clica em Simular, vê o que mudaria, e só então aplica.
+
 Ele tira do `uses` toda unit que comece com `uRESTDW` ou `uDW`, põe `RALRESTDWCompat` no
 lugar, e renomeia no `.dfm`/`.lfm` as classes dos componentes e as propriedades que
 mudaram de nome. Não encosta no corpo do seu código — com a unit de compatibilidade, ele
