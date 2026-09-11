@@ -12,6 +12,10 @@ exemplo/**/*.lps
 *.local
 *.identcache
 *.res
+# ...menos os das demos do conversor: o {$R *.res} do .dpr exige o arquivo, e
+# sem ele a demo nao compila fora da IDE. Sao 156 bytes gerados por brcc32, so
+# bloco de versao - nada da maquina de quem gerou.
+!ferramentas/conversor/demos/**/*.res
 *.dcu
 *.stat
 *.drc

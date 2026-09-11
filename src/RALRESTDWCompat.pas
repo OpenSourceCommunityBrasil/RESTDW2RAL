@@ -59,6 +59,9 @@ type
   TRESTDWRoutes        = TRALRESTDWRoutes;
   TDWReplyEvent        = TRALRESTDWReplyEvent;
   TDWReplyEventByType  = TRALRESTDWReplyEventByType;
+  { as mesmas duas na forma do RDW 1.4.3 }
+  TDWReplyEventStr       = TRALRESTDWReplyEventStr;
+  TDWReplyEventByTypeStr = TRALRESTDWReplyEventByTypeStr;
   TDWAuthRequest       = TRALRESTDWAuthRequest;
   TObjectExecute       = TRALRESTDWObjectExecute;
   TObjectEvent         = TRALRESTDWObjectEvent;

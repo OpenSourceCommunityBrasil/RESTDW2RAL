@@ -46,6 +46,11 @@ type
     property InTime: IntegerRAL read FInTime write FInTime default 1000;
   end;
 
+  { A assinatura do OnBeforeConnect do RDW (TOnEventBeforeConnection). Um
+    TNotifyEvent seria quase igual, mas o parametro la e TComponent, e o
+    designer confere a assinatura ao ligar o handler. }
+  TRALRESTDWBeforeConnect = procedure(Sender: TComponent) of object;
+
   { TRALRESTDWConnectionDefs }
 
   /// ClientConnectionDefs do RDW
@@ -75,7 +80,10 @@ type
     FEncodedStrings: Boolean;
     FEncoding: TRALRESTDWEncodeSelect;
     FFailOver: Boolean;
+    FFailOverConnections: TRALRESTDWConnectionServers;
     FFailOverReplaceDefaults: Boolean;
+    FSSLMode: TRALRESTDWSSLMode;
+    FSSLVersions: TRALRESTDWSSLVersions;
     FHandleRedirects: Boolean;
     FIgnoreEchoPooler: Boolean;
     FInterno: TRALClient;
@@ -92,7 +100,7 @@ type
     FStrsTrim: Boolean;
     FStrsTrim2Len: Boolean;
     FUseSSL: Boolean;
-    FOnBeforeConnect: TNotifyEvent;
+    FOnBeforeConnect: TRALRESTDWBeforeConnect;
     FAccessTag: StringRAL;
     FWelcomeMessage: StringRAL;
     FPoolerList: TStringList;
@@ -114,6 +122,7 @@ type
     procedure SetPoolerPort(AValue: IntegerRAL);
     procedure SetPoolerService(const AValue: StringRAL);
     procedure SetProxyOptions(AValue: TRALRESTDWProxyOptions);
+    procedure SetFailOverConnections(AValue: TRALRESTDWConnectionServers);
     procedure SetRequestTimeOut(AValue: IntegerRAL);
     procedure SetStateConnection(AValue: TRALRESTDWStateConnection);
     procedure SetUserAgent(const AValue: StringRAL);
@@ -222,8 +231,17 @@ type
       // inerte: idem
     property FailOver: Boolean read FFailOver write FFailOver default False;
       // inerte: o RAL nao tem lista de servidores de reserva
+    property FailOverConnections: TRALRESTDWConnectionServers
+      read FFailOverConnections write SetFailOverConnections;
+      // inerte: idem - guarda o que o .dfm trouxer
     property FailOverReplaceDefaults: Boolean read FFailOverReplaceDefaults
       write FFailOverReplaceDefaults default False;
+      // inerte: idem
+    property SSLVersions: TRALRESTDWSSLVersions read FSSLVersions
+      write FSSLVersions default [];
+      // inerte: no RAL a versao de TLS e do motor
+    property SSLMode: TRALRESTDWSSLMode read FSSLMode write FSSLMode
+      default sslmUnassigned;
       // inerte: idem
     property HandleRedirects: Boolean read FHandleRedirects write FHandleRedirects
       default False;
@@ -237,7 +255,8 @@ type
     property ClientConnectionDefs: TRALRESTDWConnectionDefs read FClientConnectionDefs
       write SetClientConnectionDefs;
       // inerte: as definicoes de conexao vivem no TRALDBModule do servidor
-    property OnBeforeConnect: TNotifyEvent read FOnBeforeConnect write FOnBeforeConnect;
+    property OnBeforeConnect: TRALRESTDWBeforeConnect read FOnBeforeConnect
+      write FOnBeforeConnect;
       { chamado no Loaded, antes de Active virar True - e o gancho onde codigo
         do RDW costuma montar o endereco a partir de um .ini }
   end;
@@ -303,6 +322,7 @@ begin
   FCriptOptions.OnChange := {$IFDEF FPC}@{$ENDIF}OptionChanged;
 
   FProxyOptions := TRALRESTDWProxyOptions.Create;
+  FFailOverConnections := TRALRESTDWConnectionServers.Create(Self);
   FStateConnection := TRALRESTDWStateConnection.Create;
   FClientConnectionDefs := TRALRESTDWConnectionDefs.Create;
   FPoolerList := TStringList.Create;
@@ -323,6 +343,7 @@ begin
   FreeAndNil(FPoolerList);
   FreeAndNil(FClientConnectionDefs);
   FreeAndNil(FStateConnection);
+  FreeAndNil(FFailOverConnections);
   FreeAndNil(FProxyOptions);
   FreeAndNil(FCriptOptions);
   FreeAndNil(FAuthenticationOptions);
@@ -562,6 +583,12 @@ end;
 procedure TRALRESTDWDatabase.SetCriptOptions(AValue: TRALRESTDWCriptOptions);
 begin
   FCriptOptions.Assign(AValue);
+end;
+
+procedure TRALRESTDWDatabase.SetFailOverConnections(
+  AValue: TRALRESTDWConnectionServers);
+begin
+  FFailOverConnections.Assign(AValue);
 end;
 
 procedure TRALRESTDWDatabase.SetProxyOptions(AValue: TRALRESTDWProxyOptions);

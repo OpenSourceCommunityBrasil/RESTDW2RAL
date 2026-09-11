@@ -9,7 +9,7 @@
 /// What the shell buys is that this keeps compiling and working, untouched:
 ///
 ///     RESTDWIdServicePooler1.ServerMethodClass := TDMPrincipal;
-///     RESTDWIdServicePooler1.RootPath := '/api/';
+///     RESTDWIdServicePooler1.RootPath := 'C:\site\';
 ///     RESTDWIdServicePooler1.AuthenticationOptions.AuthorizationOption := rdwAOBasic;
 ///     TRESTDWAuthOptionBasic(RESTDWIdServicePooler1.AuthenticationOptions
 ///       .OptionParams).Username := 'admin';
@@ -31,7 +31,7 @@ interface
 uses
   Classes, SysUtils,
   IdSSLOpenSSL,
-  RALTypes, RALServer, RALIndyServer, RALAuthentication,
+  RALTypes, RALServer, RALIndyServer, RALAuthentication, RALWebModule,
   RALRESTDWTypes, RALRESTDWOptions, RALRESTDWModule;
 
 type
@@ -52,7 +52,9 @@ type
     FPathTraversalRaiseError: Boolean;
     FProxyOptions: TRALRESTDWProxyOptions;
     FRequestTimeout: IntegerRAL;
+    FRootPath: StringRAL;
     FServerIPVersionConfig: TRALRESTDWIPVersionConfig;
+    FWebModule: TRALWebModule;
 
     function GetAtivo: Boolean;
     function GetRootPath: StringRAL;
@@ -284,15 +286,36 @@ end;
 
 function TRALRESTDWIndyServicePooler.GetRootPath: StringRAL;
 begin
-  Result := FModule.Domain;
+  Result := FRootPath;
 end;
 
+{ RootPath e pasta em disco, e nao prefixo de URL: o RDW monta o caminho do
+  arquivo com IncludeTrailingPathDelimiter(FRootPath) + arquivo pedido. Isto ja
+  foi ligado ao Domain do modulo, e o resultado era que a demo FullServer - que
+  faz RootPath := ExtractFilePath(Application.ExeName) - jogava todas as rotas
+  para dentro de 'C:\pasta\do\exe\' e nao respondia mais nada.
+
+  Quem faz este servico no RAL e o TRALWebModule, pelo DocumentRoot. Ele so
+  reivindica a requisicao quando existe arquivo correspondente dentro da pasta
+  (e recusa caminho que escape dela), entao nao rouba rota de evento nenhuma. }
 procedure TRALRESTDWIndyServicePooler.SetRootPath(const AValue: StringRAL);
 begin
+  FRootPath := AValue;
+
   if Trim(AValue) = '' then
-    FModule.Domain := '/'
-  else
-    FModule.Domain := AValue;
+  begin
+    FreeAndNil(FWebModule);
+    Exit;
+  end;
+
+  if FWebModule = nil then
+  begin
+    FWebModule := TRALWebModule.Create(Self);
+    FWebModule.Name := 'RDWWebModule';
+    FWebModule.Domain := '/';
+    FWebModule.Server := Self;
+  end;
+  FWebModule.DocumentRoot := AValue;
 end;
 
 { --- a classe dos eventos --- }

@@ -7,11 +7,12 @@ uses
   {$IFDEF FPC}
     LResources, PropEdits, ComponentEditors,
   {$ELSE}
-    DesignEditors, DesignIntf,
+    DesignEditors, DesignIntf, DMForm,
   {$ENDIF}
   Classes, SysUtils,
   RALRESTDWModule, RALRESTDWServerEvents, RALRESTDWClientEvents,
-  RALRESTDWClient, RALTypes;
+  RALRESTDWClient, RALRESTDWMassive, RALRESTDWServerContext,
+  RALRESTDWDataModule, RALTypes;
 
 type
   { TRALRESTDWServerEventsList }
@@ -58,7 +59,22 @@ begin
   RegisterComponents('RAL - RDWModule', [TRALRESTDWServerEvents]);
   RegisterComponents('RAL - RDWModule', [TRALRESTDWClientEvents]);
   RegisterComponents('RAL - RDWModule', [TRALRESTDWClient]);
+  RegisterComponents('RAL - RDWModule', [TRALRESTDWMassiveCache]);
+  RegisterComponents('RAL - RDWModule', [TRALRESTDWServerContext]);
   RegisterComponents('RAL - Modules', [TRALRESTDWModule]);
+
+  { Nao vai para a paleta - ninguem larga um DataModule base num formulario -
+    mas precisa ser conhecido pelo nome: o designer le o ancestral do .pas e
+    resolve a classe pelo registro, e sem isto o DataModule convertido nao
+    abre na IDE. }
+  RegisterClass(TRALRESTDWDataModule);
+  {$IFNDEF FPC}
+  { Registrar a classe faz o streamer achar o ancestral; para a IDE abrir um
+    DataModule que descende dele e preciso dizer tambem com que designer
+    desenha-lo. O proprio DataSnap do Delphi faz isto com o TRemoteDataModule
+    (source\Property Editors\MidReg.pas). }
+  RegisterCustomModule(TRALRESTDWDataModule, TDataModuleCustomModule);
+  {$ENDIF}
 
   RegisterComponentEditor(TRALRESTDWModule, TRALRESTDWModulesMenu);
   RegisterComponentEditor(TRALRESTDWClientEvents, TRALRESTDWClientEventsMenu);

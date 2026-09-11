@@ -8,6 +8,21 @@ uses
   RALServer, RALTypes, RALRoutes, RALRequest, RALResponse, RALTools,
   RALRESTDWTypes, RALConsts, RALRESTDWEvents, RALStream, RALMIMETypes;
 
+var
+  { Gancho que a metade de banco preenche ao ser linkada.
+
+    Quem tem a instancia do DataModule em maos e este modulo, na hora de
+    descobrir as rotas dos eventos - e e ali que o TRALDBModule do RAL precisa
+    nascer, porque o TRESTDWPoolerDB do RDW mora dentro do DataModule e o
+    TRALDBModule tem de viver enquanto o servidor estiver no ar.
+
+    E um gancho, e nao uma chamada direta, porque RALRESTDWPoolerDB esta no
+    pacote RALRESTDWDB: o pacote de eventos nao pode arrastar o link de banco
+    do RAL para quem so publica eventos. Nulo quando o pacote de banco nao
+    esta instalado, e ai nao ha o que montar. }
+  RALRESTDWMontarBanco: procedure(AServer: TRALServer;
+                                  AInstancia: TComponent) = nil;
+
 type
 
   { TRALRESTDWModule }
@@ -378,6 +393,11 @@ begin
     Exit;
 
   try
+    { o banco antes das rotas: o TRALDBModule responde numa rota propria e nao
+      tem nada a ver com a colecao de eventos }
+    if Assigned(RALRESTDWMontarBanco) and (Server <> nil) then
+      RALRESTDWMontarBanco(Server, vObj);
+
     Routes.Clear;
     for vInt1 := 0 to Pred(vObj.ComponentCount) do
     begin

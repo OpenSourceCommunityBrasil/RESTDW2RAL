@@ -59,8 +59,13 @@ type
     FReflectChanges: boolean;
     FApplying: boolean;
     FThreadRequest: boolean;
+    FBinaryCompatibleMode: boolean;
     FRequestTimeout: IntegerRAL;
     FWaiting: boolean;
+    { Quantas alteracoes esperam ApplyUpdates. O RAL guarda o SQL pendente num
+      TRALDBSQLCache privado e deixa o CachedUpdates do FireDAC desligado,
+      entao nem ChangeCount nem a lista dele servem de fora. }
+    FPendentes: IntegerRAL;
     FResponseDone: boolean;
     FLastError: StringRAL;
     FMasterFields: StringRAL;
@@ -219,6 +224,9 @@ type
       depois - o comportamento nativo do RAL. Desligado por padrao, porque no
       RDW essas chamadas sao sincronas. }
     property ThreadRequest: boolean read FThreadRequest write FThreadRequest default False;
+    property BinaryCompatibleMode: boolean read FBinaryCompatibleMode
+      write FBinaryCompatibleMode default False;
+      // inerte: o formato binario do RAL e um so, sem modo de compatibilidade
     /// Quanto esperar pela resposta, em milissegundos
     property RequestTimeout: IntegerRAL read FRequestTimeout write FRequestTimeout default 30000;
     /// O OnGetDataError do RDW
@@ -273,6 +281,7 @@ begin
   FBinaryRequest := True;
   FDatapacks := -1;
   FMassiveType := mtMassiveCache;
+  FPendentes := 0;
 
   FMasterSource := TDataSource.Create(Self);
   FMasterSource.OnDataChange := {$IFDEF FPC}@{$ENDIF}MasterChanged;
@@ -310,10 +319,7 @@ end;
 
 function TRALRESTDWClientSQL.ContarPendentes: IntegerRAL;
 begin
-  if Active then
-    Result := ChangeCount
-  else
-    Result := 0;
+  Result := FPendentes;
 end;
 
 procedure TRALRESTDWClientSQL.AplicarPendentes(var AError: Boolean;
@@ -500,14 +506,31 @@ var
   vNome: StringRAL;
   vCampo: TField;
   vValor: TRALJSONValue;
+  vInsertAntes: StringRAL;
 begin
   Close;
 
-  vRaiz := TRALJSON.ParseJSON(AJson);
-  if vRaiz = nil then
-    raise ERALRESTDWClientSQL.Create('OpenJson: conteudo nao e um JSON valido');
+  { Duas coisas do RAL atrapalham um dataset puramente local, que e o que o
+    OpenJson e: o JSON veio de uma API qualquer e nao ha servidor nenhum.
 
+    A primeira da para contornar: o InternalPost do RAL monta o SQL de insert
+    em toda gravacao e pede a conexao para isso. Um InsertSQL qualquer o faz
+    tomar o caminho que nao consulta a conexao; o que ele cacheia com isso sai
+    no proximo Close (o SetActive(False) do RAL limpa o cache) e nunca e
+    enviado, porque ApplyUpdates so envia quando ha alteracao contada aqui - e
+    o contador volta a zero no fim.
+
+    A segunda nao da: TRALDBFDMemTable.SetActive recusa abrir sem conexao, e
+    abrir e o que CreateDataSet faz. Sem mexer no PascalRAL nao ha caminho
+    local - ver o aviso logo abaixo. }
+  vInsertAntes := UpdateSQL.InsertSQL.Text;
+  UpdateSQL.InsertSQL.Text := '-- OpenJson';
+  { nil antes do try: o finally libera, e ParseJSON pode levantar }
+  vRaiz := nil;
   try
+    vRaiz := TRALJSON.ParseJSON(AJson);
+    if vRaiz = nil then
+      raise ERALRESTDWClientSQL.Create('OpenJson: conteudo nao e um JSON valido');
     { um objeto solto vale como uma linha so - e o que APIs de consulta por
       chave costumam devolver, e o caso da demo de CNPJ }
     vLista := nil;
@@ -538,6 +561,17 @@ begin
       for vInt1 := 0 to vObjeto.Count - 1 do
         FieldDefs.Add(string(vObjeto.GetName(vInt1)), ftString, 4096);
     end;
+
+    { Sem DataBase o RAL diz "Connection not set", que nao ajuda quem so
+      queria ler um JSON; com DataBase ele vai ao servidor e volta 404. Das
+      duas, nenhuma e o que OpenJson quer. Nomear o motivo e o que da para
+      fazer daqui - a correcao e uma linha no PascalRAL. }
+    raise ERALRESTDWClientSQL.Create(
+      'OpenJson depende de abrir o dataset sem servidor, e o ' +
+      'TRALDBFDMemTable do PascalRAL nao permite: o SetActive dele levanta ' +
+      'quando RALConnection e nil e vai buscar no servidor quando nao e. ' +
+      'Falta ao RAL, no ramo de conexao nula, chamar o inherited em vez de ' +
+      'levantar.');
 
     CreateDataSet;
 
@@ -582,6 +616,8 @@ begin
     First;
   finally
     FreeAndNil(vRaiz);
+    UpdateSQL.InsertSQL.Text := vInsertAntes;
+    FPendentes := 0;
   end;
 end;
 
@@ -664,6 +700,7 @@ end;
 procedure TRALRESTDWClientSQL.InternalPost;
 begin
   inherited InternalPost;
+  Inc(FPendentes);
 
   if CommitOnChange and (not FApplying) then
     Self.ApplyUpdates();
@@ -672,6 +709,7 @@ end;
 procedure TRALRESTDWClientSQL.InternalDelete;
 begin
   inherited InternalDelete;
+  Inc(FPendentes);
 
   if CommitOnChange and (not FApplying) then
     Self.ApplyUpdates();
@@ -691,6 +729,12 @@ begin
   if FApplying then
     Exit;
 
+  { Sem nada pendente nao se chama o RAL: ele nao trata cache vazio e quebra
+    com violacao de acesso la dentro. No RDW aplicar sem alteracao e no-op, e
+    e isso que o codigo migrado espera. }
+  if (not Active) or (FPendentes = 0) then
+    Exit;
+
   FApplying := True;
   try
     FResponseDone := False;
@@ -701,6 +745,7 @@ begin
   finally
     FApplying := False;
   end;
+  FPendentes := 0;
 
   if FAutoRefreshAfterCommit or FReflectChanges then
     RefreshData;

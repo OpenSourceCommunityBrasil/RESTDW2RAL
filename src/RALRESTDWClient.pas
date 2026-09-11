@@ -54,6 +54,19 @@ type
     FEncodedStrings: Boolean;
     FEncoding: TRALRESTDWEncodeSelect;
     FFailOver: Boolean;
+    FFailOverConnections: TRALRESTDWConnectionServers;
+    FFailOverReplaceDefaults: Boolean;
+    FSSLMode: TRALRESTDWSSLMode;
+    FSSLVersions: TRALRESTDWSSLVersions;
+    FAccessControlAllowOrigin: StringRAL;
+    FCertMode: TRALRESTDWSSLMode;
+    FMaxAuthRetries: IntegerRAL;
+    FPortCert: IntegerRAL;
+    FRequestCharset: TRALRESTDWEncodeSelect;
+    FVerifyCert: Boolean;
+    FOnWork: TRALRESTDWOnWork;
+    FOnWorkBegin: TRALRESTDWOnWork;
+    FOnWorkEnd: TRALRESTDWOnWorkEnd;
     FHandleRedirects: Boolean;
     FHost: StringRAL;
     FPoolerNotFoundMessage: StringRAL;
@@ -75,6 +88,7 @@ type
     procedure SetHost(const AValue: StringRAL);
     procedure SetPort(AValue: IntegerRAL);
     procedure SetProxyOptions(AValue: TRALRESTDWProxyOptions);
+    procedure SetFailOverConnections(AValue: TRALRESTDWConnectionServers);
     procedure SetUseSSL(AValue: Boolean);
 
     /// Host + Port + UseSSL sao um endereco so para o RAL
@@ -178,6 +192,40 @@ type
       // inerte: o corpo do RAL ja vai binario quando precisa
     property FailOver: Boolean read FFailOver write FFailOver default False;
       // inerte: o RAL nao tem lista de servidores de reserva
+    property FailOverConnections: TRALRESTDWConnectionServers
+      read FFailOverConnections write SetFailOverConnections;
+      // inerte, pelo mesmo motivo - guarda o que o .dfm trouxer
+    property FailOverReplaceDefaults: Boolean read FFailOverReplaceDefaults
+      write FFailOverReplaceDefaults default False;
+      // inerte
+    property SSLVersions: TRALRESTDWSSLVersions read FSSLVersions
+      write FSSLVersions default [];
+      // inerte: no RAL a versao de TLS e do motor, em SSL.SSLOptions
+    property SSLMode: TRALRESTDWSSLMode read FSSLMode write FSSLMode
+      default sslmUnassigned;
+      // inerte: idem
+    property CertMode: TRALRESTDWSSLMode read FCertMode write FCertMode
+      default sslmUnassigned;
+      // inerte: idem
+    property VerifyCert: Boolean read FVerifyCert write FVerifyCert default False;
+      // inerte: quem confere o certificado no RAL e o OnValidateServerCert
+    property PortCert: IntegerRAL read FPortCert write FPortCert default 0;
+      // inerte: o RAL usa a porta da BaseURL para tudo
+    property MaxAuthRetries: IntegerRAL read FMaxAuthRetries
+      write FMaxAuthRetries default 0;
+      // inerte: o RAL nao repete a autenticacao sozinho
+    property RequestCharset: TRALRESTDWEncodeSelect read FRequestCharset
+      write FRequestCharset default esUtf8;
+      // inerte: o Charset do TRALClient vale para pedido e resposta
+    property AccessControlAllowOrigin: StringRAL read FAccessControlAllowOrigin
+      write FAccessControlAllowOrigin;
+      // inerte: CORS e coisa de servidor
+    property OnWork: TRALRESTDWOnWork read FOnWork write FOnWork;
+      // inerte: o TRALClient nao publica progresso de transferencia
+    property OnWorkBegin: TRALRESTDWOnWork read FOnWorkBegin write FOnWorkBegin;
+      // inerte: idem
+    property OnWorkEnd: TRALRESTDWOnWorkEnd read FOnWorkEnd write FOnWorkEnd;
+      // inerte: idem
     property PoolerNotFoundMessage: StringRAL read FPoolerNotFoundMessage
       write FPoolerNotFoundMessage;
       // inerte: a mensagem de rota inexistente vem do servidor
@@ -198,6 +246,7 @@ begin
   FPort := 8082;
   FUseSSL := False;
   FEncoding := esUtf8;
+  FRequestCharset := esUtf8;
   FEncodedStrings := True;
   FCharset := 'utf8';
 
@@ -208,6 +257,7 @@ begin
   FCriptOptions.OnChange := {$IFDEF FPC}@{$ENDIF}OptionChanged;
 
   FProxyOptions := TRALRESTDWProxyOptions.Create;
+  FFailOverConnections := TRALRESTDWConnectionServers.Create(Self);
 
   EscolherEngine;
   RebuildBaseURL;
@@ -237,6 +287,7 @@ end;
 
 destructor TRALRESTDWClient.Destroy;
 begin
+  FreeAndNil(FFailOverConnections);
   FreeAndNil(FProxyOptions);
   FreeAndNil(FCriptOptions);
   FreeAndNil(FAuthenticationOptions);
@@ -443,6 +494,12 @@ function TRALRESTDWClient.Delete(const AUrl: StringRAL; AHeaders: TStringList;
   AResposta: TStream): IntegerRAL;
 begin
   Result := ChamarVerbo(amDELETE, AUrl, AHeaders, nil, AResposta);
+end;
+
+procedure TRALRESTDWClient.SetFailOverConnections(
+  AValue: TRALRESTDWConnectionServers);
+begin
+  FFailOverConnections.Assign(AValue);
 end;
 
 procedure TRALRESTDWClient.SetProxyOptions(AValue: TRALRESTDWProxyOptions);

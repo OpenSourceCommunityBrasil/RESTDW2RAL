@@ -16,7 +16,8 @@ interface
 
 uses
   Classes, SysUtils,
-  RALTypes, RALServer, RALClient, RALAuthentication, RALCripto, RALToken;
+  RALTypes, RALServer, RALClient, RALAuthentication, RALCripto, RALToken,
+  RALRESTDWTypes;
 
 type
   /// Same members and order as RDW's TRESTDWAuthOption
@@ -223,6 +224,10 @@ type
     property OtherDetails: StringRAL read FOtherDetails write FOtherDetails;
   end;
 
+  { O TTyperequest do RDW. Dos quatro, so o https muda alguma coisa aqui: o RAL
+    escolhe o esquema pela BaseURL, e nao ha transporte proprio por tipo. }
+  TRALRESTDWTypeRequest = (trHttp, trHttps, trSocket, trWebSocket);
+
   { TRALRESTDWConnectionServer }
 
   { Um servidor da lista de reserva do RDW. O RAL nao tem failover, entao a
@@ -237,7 +242,17 @@ type
     FPoolerPort: IntegerRAL;
     FPoolerService: StringRAL;
     FRequestTimeOut: IntegerRAL;
+    FAccessTag: StringRAL;
+    FAuthentication: Boolean;
+    FCompression: Boolean;
+    FDataRoute: StringRAL;
+    FEncodeStrings: Boolean;
+    FEncoding: TRALRESTDWEncodeSelect;
+    FServerEventName: StringRAL;
+    FTypeRequest: TRALRESTDWTypeRequest;
+    FWelcomeMessage: StringRAL;
   public
+    constructor Create(ACollection: TCollection); override;
     procedure Assign(ASource: TPersistent); override;
   published
     property Name: StringRAL read FName write FName;
@@ -250,6 +265,23 @@ type
       write FRequestTimeOut default 0;
     property ConnectTimeOut: IntegerRAL read FConnectTimeOut
       write FConnectTimeOut default 0;
+
+    { O mesmo item serve de entrada de failover, e la o RDW batiza as coisas de
+      outro jeito (Host/Port em vez de PoolerService/PoolerPort). Todas inertes:
+      o RAL nao tem failover de cliente. }
+    property Host: StringRAL read FPoolerService write FPoolerService stored False;
+    property Port: IntegerRAL read FPoolerPort write FPoolerPort stored False;
+    property Compression: Boolean read FCompression write FCompression default False;
+    property hEncodeStrings: Boolean read FEncodeStrings write FEncodeStrings default True;
+    property Encoding: TRALRESTDWEncodeSelect read FEncoding write FEncoding default esUtf8;
+    property WelcomeMessage: StringRAL read FWelcomeMessage write FWelcomeMessage;
+    property AccessTag: StringRAL read FAccessTag write FAccessTag;
+    property TypeRequest: TRALRESTDWTypeRequest read FTypeRequest write FTypeRequest
+      default trHttp;
+    property ServerEventName: StringRAL read FServerEventName write FServerEventName;
+    property DataRoute: StringRAL read FDataRoute write FDataRoute;
+    property Authentication: Boolean read FAuthentication write FAuthentication
+      default True;
   end;
 
   { TRALRESTDWConnectionServers }
@@ -267,10 +299,6 @@ type
       default;
   end;
 
-  { O TTyperequest do RDW. Dos quatro, so o https muda alguma coisa aqui: o RAL
-    escolhe o esquema pela BaseURL, e nao ha transporte proprio por tipo. }
-  TRALRESTDWTypeRequest = (trHttp, trHttps, trSocket, trWebSocket);
-
   /// Mesmos membros e ordem do TConnStatus do RDW
   TRALRESTDWConnStatus = (hsResolving, hsConnecting, hsConnected,
                           hsDisconnecting, hsDisconnected, hsStatusText);
@@ -278,6 +306,23 @@ type
   { TRALRESTDWProxyOptions }
 
   /// ProxyOptions do RDW. O RAL nao atravessa proxy, entao aqui so guarda.
+  { O SSL do RDW. O SSLVersions e do proprio RDW (uRESTDWBasic) e o SSLMode e o
+    TIdSSLMode do Indy, repetido aqui com os mesmos nomes de valor para o DFM
+    carregar sem arrastar o Indy para o pacote base - quem escolhe o motor e o
+    usuario, e um cliente de netHTTP nao tem por que linkar Indy.
+    Inertes: no RAL o TLS e do motor, configurado por SSL.SSLOptions. }
+  TRALRESTDWSSLVersion = (SSLv2, SSLv23, SSLv3, TLSv1, TLSv1_1, TLSv1_2,
+                          TLSv1_3);
+  TRALRESTDWSSLVersions = set of TRALRESTDWSSLVersion;
+  TRALRESTDWSSLMode = (sslmUnassigned, sslmClient, sslmServer, sslmBoth);
+
+  { Os ganchos de progresso do RDW (TOnWork/TOnWorkEnd, de
+    uRESTDWComponentEvents), que la vem do Indy. Ficam declarados para o DFM
+    carregar e o handler continuar ligado; o TRALClient nao publica progresso,
+    entao nada os dispara. }
+  TRALRESTDWOnWork = procedure(ASender: TObject; AWorkCount: Int64) of object;
+  TRALRESTDWOnWorkEnd = procedure(ASender: TObject) of object;
+
   TRALRESTDWProxyOptions = class(TRALRESTDWPersistent)
   private
     FProxyPassword: StringRAL;
@@ -291,6 +336,16 @@ type
     property ProxyPort: IntegerRAL read FProxyPort write FProxyPort default 0;
     property ProxyUsername: StringRAL read FProxyUsername write FProxyUsername;
     property ProxyPassword: StringRAL read FProxyPassword write FProxyPassword;
+
+    { O RDW tem dois proxies de nomes diferentes: o do cliente e o
+      TProxyConnectionInfo do Indy (ProxyServer/ProxyPort/...) e o do database e
+      o TProxyOptions dele (Server/Port/Login/Password). Uma casca so atende os
+      dois publicando os dois jogos de nomes sobre o mesmo campo; este jogo vai
+      com stored False para ser lido do DFM antigo e nunca gravado em dobro. }
+    property Server: StringRAL read FProxyServer write FProxyServer stored False;
+    property Port: IntegerRAL read FProxyPort write FProxyPort stored False;
+    property Login: StringRAL read FProxyUsername write FProxyUsername stored False;
+    property Password: StringRAL read FProxyPassword write FProxyPassword stored False;
   end;
 
   { TRALRESTDWIPVersionConfig }
@@ -428,6 +483,16 @@ end;
 
 { TRALRESTDWConnectionServer }
 
+constructor TRALRESTDWConnectionServer.Create(ACollection: TCollection);
+begin
+  inherited Create(ACollection);
+  FPoolerPort := 8082;
+  FEncodeStrings := True;
+  FEncoding := esUtf8;
+  FTypeRequest := trHttp;
+  FAuthentication := True;
+end;
+
 procedure TRALRESTDWConnectionServer.Assign(ASource: TPersistent);
 var
   vSource: TRALRESTDWConnectionServer;
@@ -446,6 +511,15 @@ begin
   FPoolerName := vSource.PoolerName;
   FRequestTimeOut := vSource.RequestTimeOut;
   FConnectTimeOut := vSource.ConnectTimeOut;
+  FAccessTag := vSource.AccessTag;
+  FAuthentication := vSource.Authentication;
+  FCompression := vSource.Compression;
+  FDataRoute := vSource.DataRoute;
+  FEncodeStrings := vSource.hEncodeStrings;
+  FEncoding := vSource.Encoding;
+  FServerEventName := vSource.ServerEventName;
+  FTypeRequest := vSource.TypeRequest;
+  FWelcomeMessage := vSource.WelcomeMessage;
 end;
 
 { TRALRESTDWConnectionServers }

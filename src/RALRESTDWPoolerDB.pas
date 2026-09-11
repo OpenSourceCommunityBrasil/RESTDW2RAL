@@ -26,9 +26,34 @@ interface
 uses
   Classes, SysUtils, TypInfo,
   RALTypes, RALDBBase, RALDBModule, RALServer,
-  RALRESTDWTypes;
+  {$IFDEF FPC}
+    RALDBSQLDB,
+  {$ELSE}
+    RALDBFireDAC,
+  {$ENDIF}
+  RALRESTDWTypes, RALRESTDWModule, RALRequest;
 
 type
+  { Liga a conexao do projeto ao TRALDBModule do RAL.
+
+    No RDW o DataModule do servidor nasce a cada requisicao e quem monta os
+    parametros da conexao e o BeforeConnect dela, escrito pelo projeto - lendo
+    .ini, campos de tela, o que for. Nada fica fixo no .dfm.
+
+    No RAL o TRALDBModule guarda a conexao como texto e monta o proprio driver,
+    entao aquele codigo do projeto nunca rodaria e a migracao chegaria no banco
+    sem usuario e sem caminho. O RAL oferece a costura certa: o OnBeforeConnect
+    do modulo dispara com a conexao dele em maos e antes de abrir. Ali esta
+    ponte cria o DataModule do projeto, dispara o BeforeConnect da conexao de
+    la e copia os parametros que sairam. }
+  TRALRESTDWPonteConexao = class(TComponent)
+  private
+    FClasseModulo: TComponentClass;
+  public
+    procedure AntesDeConectar(ASender: TObject; ARequest: TRALRequest);
+    property ClasseModulo: TComponentClass read FClasseModulo write FClasseModulo;
+  end;
+
   /// Mesmos membros e ordem do TRESTDWDatabaseType do RDW
   TRALRESTDWDatabaseType = (dbtUndefined, dbtAccess, dbtDbase, dbtFirebird,
                             dbtInterbase, dbtMySQL, dbtSQLLite, dbtOracle,
@@ -108,6 +133,7 @@ type
     FParamCreate: Boolean;
     FPoolerOffMessage: StringRAL;
     FRESTDriver: TRALRESTDWDriverBase;
+    FDataRoute: StringRAL;
     FStrsEmpty2Null: Boolean;
     FStrsTrim: Boolean;
     FStrsTrim2Len: Boolean;
@@ -119,6 +145,12 @@ type
     { Configura um TRALDBModule a partir do que o driver aponta. E o servidor
       que chama isto, uma vez, ao descobrir o DataModule. }
     procedure ConfigurarModulo(AModule: TRALDBModule);
+  published
+    { A rota em que o TRALDBModule responde. O RDW nao tem equivalente no lado
+      do servidor - la a rota e fixa no transporte -, entao este e o unico
+      membro daqui que nao veio do RDW. O default casa com o DataRoute que o
+      TRESTDataBase do cliente ja traz. }
+    property DataRoute: StringRAL read FDataRoute write FDataRoute;
   published
     property RESTDriver: TRALRESTDWDriverBase read FRESTDriver write FRESTDriver;
     { Com False o servidor nao publica a rota de banco, que e o mesmo efeito do
@@ -205,6 +237,8 @@ constructor TRALRESTDWPoolerDB.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   FEncoding := esUtf8;
+  { casa com o DataRoute que o TRESTDataBase do cliente ja traz de fabrica }
+  FDataRoute := '/datadm';
 end;
 
 procedure TRALRESTDWPoolerDB.Notification(AComponent: TComponent;
@@ -222,9 +256,15 @@ begin
   if (AModule = nil) or (FRESTDriver = nil) then
     Exit;
 
-  { O link e sempre FireDAC no Delphi: e o unico que o RAL traz para o servidor
-    ali, e e tambem o que o driver do RDW usava por baixo. }
-  AModule.DatabaseLink := 'FireDAC';
+  { O nome tem que ser o DatabaseName da classe de link, e quem a registra e a
+    initialization da unit dela - por isso ela entra no uses acima. Sem isso o
+    GetDatabaseClass devolve nil e o servidor responde "DBLink Property
+    missing" na primeira consulta, com tudo o mais certo. }
+  {$IFDEF FPC}
+    AModule.DatabaseLink := 'SQLDB';
+  {$ELSE}
+    AModule.DatabaseLink := 'FireDAC';
+  {$ENDIF}
   AModule.DatabaseType := FRESTDriver.TipoRAL;
 
   { Os parametros saem da conexao que o driver aponta, com os nomes que todo
@@ -241,5 +281,152 @@ begin
   if vPorta <> '' then
     AModule.Port := StrToIntDef(string(vPorta), 0);
 end;
+
+{ O objeto do tipo pedido dentro de um DataModule, ou nil. }
+function AcharComponente(AInstancia: TComponent;
+  AClasse: TClass): TComponent;
+var
+  vInt1: IntegerRAL;
+begin
+  Result := nil;
+  if AInstancia = nil then
+    Exit;
+  for vInt1 := 0 to Pred(AInstancia.ComponentCount) do
+    if AInstancia.Components[vInt1].InheritsFrom(AClasse) then
+    begin
+      Result := AInstancia.Components[vInt1];
+      Exit;
+    end;
+end;
+
+{ Uma propriedade de objeto por nome, sem conhecer o tipo do componente - a
+  conexao pode ser TFDConnection, TZConnection, TSQLConnection... }
+function ObjetoDaProp(AObj: TObject; const ANome: string): TObject;
+var
+  vProp: PPropInfo;
+begin
+  Result := nil;
+  if AObj = nil then
+    Exit;
+  vProp := GetPropInfo(AObj, ANome);
+  if (vProp = nil) or (vProp^.PropType^.Kind <> tkClass) then
+    Exit;
+  Result := GetObjectProp(AObj, vProp);
+end;
+
+{ TRALRESTDWPonteConexao }
+
+procedure TRALRESTDWPonteConexao.AntesDeConectar(ASender: TObject;
+  ARequest: TRALRequest);
+var
+  vObj: TComponent;
+  vPooler: TRALRESTDWPoolerDB;
+  vConn: TComponent;
+  vMetodo: TMethod;
+  vNotify: TNotifyEvent;
+  vOrigem, vDestino: TObject;
+begin
+  if FClasseModulo = nil then
+    Exit;
+
+  { por requisicao, como no RDW: o BeforeConnect costuma ler estado que muda }
+  vObj := FClasseModulo.Create(nil);
+  try
+    vPooler := TRALRESTDWPoolerDB(AcharComponente(vObj, TRALRESTDWPoolerDB));
+    if (vPooler = nil) or (vPooler.RESTDriver = nil) then
+      Exit;
+
+    vConn := vPooler.RESTDriver.Connection;
+    if vConn = nil then
+      Exit;
+
+    { dispara o BeforeConnect do projeto sem abrir conexao nenhuma: o handler
+      so preenche Params, e e disso que se precisa }
+    vMetodo := GetMethodProp(vConn, 'BeforeConnect');
+    if vMetodo.Code <> nil then
+    begin
+      TMethod(vNotify) := vMetodo;
+      try
+        vNotify(vConn);
+      except
+        { handler do projeto que depende de tela fechada nao pode derrubar a
+          requisicao - fica o que o .dfm trouxe }
+      end;
+    end;
+
+    vOrigem := ObjetoDaProp(vConn, 'Params');
+    vDestino := ObjetoDaProp(ASender, 'Params');
+    if (vOrigem is TStrings) and (vDestino is TStrings) and
+       (TStrings(vOrigem).Count > 0) then
+      TStrings(vDestino).Assign(TStrings(vOrigem));
+  finally
+    vObj.Free;
+  end;
+end;
+
+{ Acha o TRESTDWPoolerDB que o projeto declarou dentro do DataModule do servidor
+  e materializa o TRALDBModule correspondente, pendurado no servidor. Roda uma
+  vez, quando o modulo de eventos instancia a classe para descobrir rotas. }
+procedure MontarBanco(AServer: TRALServer; AInstancia: TComponent);
+var
+  vInt1: IntegerRAL;
+  vComp: TComponent;
+  vPooler: TRALRESTDWPoolerDB;
+  vModule: TRALDBModule;
+  vPonte: TRALRESTDWPonteConexao;
+  vRota: StringRAL;
+begin
+  if (AServer = nil) or (AInstancia = nil) then
+    Exit;
+
+  vPooler := nil;
+  for vInt1 := 0 to Pred(AInstancia.ComponentCount) do
+  begin
+    vComp := AInstancia.Components[vInt1];
+    if vComp.InheritsFrom(TRALRESTDWPoolerDB) then
+    begin
+      vPooler := TRALRESTDWPoolerDB(vComp);
+      Break;
+    end;
+  end;
+
+  if (vPooler = nil) or (not vPooler.Active) then
+    Exit;
+
+  vRota := vPooler.DataRoute;
+  if Trim(vRota) = '' then
+    vRota := '/datadm';
+
+  { um por rota: RefreshRoutes roda mais de uma vez (Loaded, SetServer, o verbo
+    do editor) e nao se empilha modulo de banco a cada passada }
+  for vInt1 := 0 to Pred(AServer.ComponentCount) do
+  begin
+    vComp := AServer.Components[vInt1];
+    if vComp.InheritsFrom(TRALDBModule) and
+       SameText(string(TRALDBModule(vComp).Domain), string(vRota)) then
+    begin
+      vPooler.ConfigurarModulo(TRALDBModule(vComp));
+      Exit;
+    end;
+  end;
+
+  vModule := TRALDBModule.Create(AServer);
+  vModule.Name := 'RDWDBModule';
+  vModule.Domain := vRota;
+  vModule.Server := AServer;
+  vPooler.ConfigurarModulo(vModule);
+
+  { o que o .dfm trouxe ja esta no modulo; a ponte cobre o resto, que e o
+    normal: projeto que monta a conexao em codigo }
+  vPonte := TRALRESTDWPonteConexao.Create(vModule);
+  vPonte.ClasseModulo := TComponentClass(AInstancia.ClassType);
+  vModule.OnBeforeConnect := {$IFDEF FPC}@{$ENDIF}vPonte.AntesDeConectar;
+end;
+
+initialization
+  RALRESTDWMontarBanco := {$IFDEF FPC}@{$ENDIF}MontarBanco;
+
+finalization
+  RALRESTDWMontarBanco := nil;
 
 end.

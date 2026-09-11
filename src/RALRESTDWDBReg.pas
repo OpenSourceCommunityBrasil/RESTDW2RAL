@@ -8,7 +8,7 @@ uses
     LResources,
   {$ENDIF}
   Classes,
-  RALRESTDWClientSQL;
+  RALRESTDWClientSQL, RALRESTDWDatabase, RALRESTDWPoolerDB;
 
 procedure Register;
 
@@ -17,6 +17,9 @@ implementation
 procedure Register;
 begin
   RegisterComponents('RAL - RDWModule', [TRALRESTDWClientSQL]);
+  RegisterComponents('RAL - RDWModule', [TRALRESTDWDatabase]);
+  RegisterComponents('RAL - RDWModule', [TRALRESTDWPoolerDB]);
+  RegisterComponents('RAL - RDWModule', [TRALRESTDWFireDACDriver]);
 end;
 
 end.

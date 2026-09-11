@@ -16,20 +16,21 @@ type
     They carry `var` on the params exactly like REST Dataware, so an existing
     handler only has to have its parameter type renamed - see RALRESTDWCompat,
     which aliases even that away. }
-  { AResult e String, e nao StringRAL, de proposito: StringRAL e UTF8String, o
+  { As duas geracoes do RDW dao formas diferentes ao mesmo handler: o 2.x
+    entrega o resultado num TStringList const e o 1.4.3 numa string var. Isso
+    era uma diretiva de compilacao, o que obrigava a escolher uma forma por
+    pacote instalado e recompilar tudo para atender a outra.
+
+    As duas ficam publicadas, com nomes diferentes: OnReplyEvent e a forma 2.x
+    e OnReplyEventStr e a 1.4.3. O conversor ja sabe qual assinatura o projeto
+    usa - e ele quem escolhe o nome ao reescrever o .dfm. Vale a que estiver
+    ligada, e um pacote so atende as duas geracoes ao mesmo tempo.
+
+    AResult e String, e nao StringRAL, de proposito: StringRAL e UTF8String, o
     handler do RDW 1.4.3 declara String, e o DFM liga os dois pelo nome sem
     conferir a assinatura. Um byte por caractere de um lado e dois do outro
     nao daria erro de compilacao - daria texto corrompido na primeira
     chamada. }
-  {$IFDEF RDW143}
-  TRALRESTDWReplyEvent = procedure(var AParams: TRALRESTDWParams;
-                                   var AResult: string) of object;
-  TRALRESTDWReplyEventByType = procedure(var AParams: TRALRESTDWParams;
-                                         var AResult: string;
-                                         const ARequestType: TRALMethod;
-                                         var AStatusCode: IntegerRAL;
-                                         ARequestHeader: TStringList) of object;
-  {$ELSE}
   TRALRESTDWReplyEvent = procedure(var AParams: TRALRESTDWParams;
                                    const AResult: TStringList) of object;
   TRALRESTDWReplyEventByType = procedure(var AParams: TRALRESTDWParams;
@@ -37,7 +38,15 @@ type
                                          const ARequestType: TRALMethod;
                                          var AStatusCode: IntegerRAL;
                                          ARequestHeader: TStringList) of object;
-  {$ENDIF}
+
+  /// A mesma coisa na forma do RDW 1.4.3
+  TRALRESTDWReplyEventStr = procedure(var AParams: TRALRESTDWParams;
+                                      var AResult: string) of object;
+  TRALRESTDWReplyEventByTypeStr = procedure(var AParams: TRALRESTDWParams;
+                                            var AResult: string;
+                                            const ARequestType: TRALMethod;
+                                            var AStatusCode: IntegerRAL;
+                                            ARequestHeader: TStringList) of object;
 
   /// Per-event authorization, fired before the handler
   TRALRESTDWAuthRequest = procedure(const AParams: TRALRESTDWParams;
@@ -150,6 +159,8 @@ type
   private
     FOnReplyEvent: TRALRESTDWReplyEvent;
     FOnReplyEventByType: TRALRESTDWReplyEventByType;
+    FOnReplyEventStr: TRALRESTDWReplyEventStr;
+    FOnReplyEventByTypeStr: TRALRESTDWReplyEventByTypeStr;
     FOnAuthRequest: TRALRESTDWAuthRequest;
     FOnBeforeExecute: TRALRESTDWObjectExecute;
   protected
@@ -165,6 +176,11 @@ type
   published
     property OnReplyEvent: TRALRESTDWReplyEvent read FOnReplyEvent write FOnReplyEvent;
     property OnReplyEventByType: TRALRESTDWReplyEventByType read FOnReplyEventByType write FOnReplyEventByType;
+    { as mesmas duas na forma do RDW 1.4.3 - o conversor escolhe o nome }
+    property OnReplyEventStr: TRALRESTDWReplyEventStr read FOnReplyEventStr
+      write FOnReplyEventStr;
+    property OnReplyEventByTypeStr: TRALRESTDWReplyEventByTypeStr
+      read FOnReplyEventByTypeStr write FOnReplyEventByTypeStr;
     property OnAuthRequest: TRALRESTDWAuthRequest read FOnAuthRequest write FOnAuthRequest;
     property OnBeforeExecute: TRALRESTDWObjectExecute read FOnBeforeExecute write FOnBeforeExecute;
   end;
@@ -479,6 +495,8 @@ begin
     begin
       OnReplyEvent := Self.OnReplyEvent;
       OnReplyEventByType := Self.OnReplyEventByType;
+      OnReplyEventStr := Self.OnReplyEventStr;
+      OnReplyEventByTypeStr := Self.OnReplyEventByTypeStr;
       OnAuthRequest := Self.OnAuthRequest;
       OnBeforeExecute := Self.OnBeforeExecute;
     end;
@@ -517,24 +535,18 @@ procedure TRALRESTDWEventServer.ReplyEvent(ARequest: TRALRequest;
   AResponse: TRALResponse; AModule: TComponent; AIgnoreInvalidParams: boolean);
 var
   vParams: TRALRESTDWParams;
-  {$IFDEF RDW143}
-    { String, e nao StringRAL: a assinatura do handler tem que bater com a do
-      RDW 1.4.3, que o DFM liga por nome sem conferir }
-    vResult: string;
-  {$ELSE}
-    vResult: TStringList;
-  {$ENDIF}
+  vResult: TStringList;
+  { String, e nao StringRAL: a assinatura do handler tem que bater com a do
+    RDW 1.4.3, que o DFM liga por nome sem conferir }
+  vResultStr: string;
   vHeader: TStringList;
   vStatusCode: IntegerRAL;
   vRejected: boolean;
   vInvalid: StringRAL;
   vError: string;
 begin
-  {$IFDEF RDW143}
-    vResult := '';
-  {$ELSE}
-    vResult := TStringList.Create;
-  {$ENDIF}
+  vResult := TStringList.Create;
+  vResultStr := '';
   vHeader := TStringList.Create;
   vParams := TRALRESTDWParams.Create;
   try
@@ -580,20 +592,24 @@ begin
       if Assigned(FOnBeforeExecute) then
         FOnBeforeExecute(Self);
 
+      { vale a que estiver ligada; a ordem so decide o desempate quando alguem
+        liga duas, o que nenhum projeto convertido faz }
       if Assigned(FOnReplyEvent) then
         FOnReplyEvent(vParams, vResult)
+      else if Assigned(FOnReplyEventStr) then
+        FOnReplyEventStr(vParams, vResultStr)
       else if Assigned(FOnReplyEventByType) then
-        FOnReplyEventByType(vParams, vResult, ARequest.Method, vStatusCode, vHeader);
+        FOnReplyEventByType(vParams, vResult, ARequest.Method, vStatusCode, vHeader)
+      else if Assigned(FOnReplyEventByTypeStr) then
+        FOnReplyEventByTypeStr(vParams, vResultStr, ARequest.Method, vStatusCode,
+                               vHeader);
 
       AResponse.StatusCode := vStatusCode;
 
-      {$IFDEF RDW143}
-        if Trim(vResult) <> '' then
-          AResponse.Params.AddParam(cUndefined, StringRAL(vResult), rpkBODY);
-      {$ELSE}
-        if Trim(vResult.Text) <> '' then
-          AResponse.Params.AddParam(cUndefined, vResult.Text, rpkBODY);
-      {$ENDIF}
+      if Trim(vResult.Text) <> '' then
+        AResponse.Params.AddParam(cUndefined, vResult.Text, rpkBODY)
+      else if Trim(vResultStr) <> '' then
+        AResponse.Params.AddParam(cUndefined, StringRAL(vResultStr), rpkBODY);
 
       AResponse.Params.AppendParams(vHeader, rpkHEADER);
       vParams.AppendResponse(AResponse);
@@ -607,9 +623,7 @@ begin
       end;
     end;
   finally
-    {$IFNDEF RDW143}
-      FreeAndNil(vResult);
-    {$ENDIF}
+    FreeAndNil(vResult);
     FreeAndNil(vHeader);
     FreeAndNil(vParams);
   end;

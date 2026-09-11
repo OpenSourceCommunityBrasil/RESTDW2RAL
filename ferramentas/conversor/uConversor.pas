@@ -24,6 +24,10 @@ uses
   System.SysUtils, System.Classes, System.StrUtils, System.IOUtils;
 
 type
+  { A forma do handler de evento: o RDW 2.x entrega o resultado num TStringList
+    e o 1.4.3 numa string. }
+  TFormaHandler = (fhIndefinida, fhStringList, fhString);
+
   TTipoAviso = (taUnitRemovida, taRenomeado, taPortado, taDescartado,
                 taInjetado, taSemEquivalente);
 
@@ -63,6 +67,10 @@ type
     FTotalAlteracoes: Integer;
     FOnAviso: TAvisoEvento;
     FOnArquivo: TArquivoEvento;
+    { o .pas do par, guardado: um formulario pergunta a forma uma vez por
+      evento, e sao sempre do mesmo arquivo }
+    FParArquivo: string;
+    FParTexto: string;
 
     procedure Avisar(const AArquivo, ATexto: string; ATipo: TTipoAviso);
 
@@ -77,12 +85,13 @@ type
     procedure ReescreverItemEvento(ALinhas, ASaida: TStringList;
                                    var AIdx: Integer; const AArquivo: string;
                                    var AQtd: Integer);
-    { O RDW 1.4.3 entregava o resultado do evento como string e o 2.1 como
-      TStringList. O DFM liga o handler por nome, sem conferir assinatura,
-      entao a diferenca nao da erro de compilacao - da pilha corrompida na
-      primeira chamada. Por isso a checagem e um aviso de ATENCAO. }
-    procedure ConferirAssinatura(const ATexto: RawByteString;
-                                 const AArquivo: string);
+    { A forma e de cada handler, e nao do arquivo: a demo FullServer do RDW tem
+      handlers das duas geracoes lado a lado no mesmo .pas. Decidir por arquivo
+      ligava metade dos eventos na assinatura errada, e o DFM liga por nome sem
+      conferir - dava violacao de acesso na primeira chamada, nao erro de
+      compilacao. }
+    function FormaDoMetodo(const AArquivoDFM, AMetodo: string): TFormaHandler;
+
     /// Registra a classe do DataModule, que e como o modulo a encontra
     function InjetarRegisterClass(const ATexto: RawByteString;
                                   const AArquivo: string;
@@ -146,7 +155,7 @@ type
 const
   { Classes de componente: e o unico ponto que nenhuma unit de compatibilidade
     resolve, porque o formulario guarda o nome real da classe. }
-  cClasses: array[0..7] of TTroca = (
+  cClasses: array[0..9] of TTroca = (
     (De: 'TRESTDWServerEvents';   Para: 'TRALRESTDWServerEvents';   Nota: ''),
     (De: 'TRESTDWClientEvents';   Para: 'TRALRESTDWClientEvents';   Nota: ''),
     (De: 'TRESTDWClientSQL';      Para: 'TRALRESTDWClientSQL';      Nota: ''),
@@ -154,7 +163,15 @@ const
     (De: 'TRESTDWPoolerDB';       Para: 'TRALRESTDWPoolerDB';       Nota: ''),
     (De: 'TRESTDWFireDACDriver';  Para: 'TRALRESTDWFireDACDriver';  Nota: ''),
     (De: 'TRESTDWMassiveCache';   Para: 'TRALRESTDWMassiveCache';   Nota: ''),
-    (De: 'TRESTDWServerContext';  Para: 'TRALRESTDWServerContext';  Nota: '')
+    (De: 'TRESTDWServerContext';  Para: 'TRALRESTDWServerContext';  Nota: ''),
+    { o autenticador do RAL publica AuthDialog, UserName e Password com os
+      mesmos nomes, entao e troca de nome e nada mais }
+    (De: 'TRESTDWAuthBasic';      Para: 'TRALServerBasicAuth';      Nota: ''),
+    { O ancestral do DataModule do servidor. A unit de compatibilidade faz o
+      alias e o compilador se satisfaz, mas a IDE le esse nome do .pas para
+      montar o DataModule no designer, e alias nao e classe - sem a troca o
+      DataModule convertido nao abre. }
+    (De: 'TServerMethodDataModule'; Para: 'TRALRESTDWDataModule';  Nota: '')
   );
 
   { Propriedades que trocaram de nome no formulario }
@@ -186,7 +203,7 @@ const
   );
 
   { Tipos, para quem preferir trocar em vez de usar o RALRESTDWCompat }
-  cTipos: array[0..14] of TTroca = (
+  cTipos: array[0..13] of TTroca = (
     (De: 'TRESTDWParams';        Para: 'TRALRESTDWParams';        Nota: ''),
     (De: 'TDWParams';            Para: 'TRALRESTDWParams';        Nota: ''),
     (De: 'TRESTDWJSONParam';     Para: 'TRALRESTDWJSONParam';     Nota: ''),
@@ -194,7 +211,6 @@ const
     (De: 'TRESTDWParamMethod';   Para: 'TRALRESTDWParamMethod';   Nota: ''),
     (De: 'TRESTDWEventList';     Para: 'TRALRESTDWEventList';     Nota: ''),
     (De: 'TRESTDWEvent';         Para: 'TRALRESTDWEventServer';   Nota: ''),
-    (De: 'TServerMethodDataModule'; Para: 'TRALRESTDWDataModule'; Nota: ''),
     (De: 'TRESTDWClientInfo';    Para: 'TRALRESTDWClientInfo';    Nota: ''),
     (De: 'TObjectDirection';     Para: 'TRALRESTDWObjectDirection'; Nota: ''),
     (De: 'TObjectValue';         Para: 'TRALRESTDWObjectValue';   Nota: ''),
@@ -872,25 +888,52 @@ begin
   end;
 end;
 
-procedure TConversor.ConferirAssinatura(const ATexto: RawByteString;
-  const AArquivo: string);
+{ Quem declara o handler e o .pas do par; quem precisa saber o nome da
+  propriedade e o .dfm. Ler o par evita depender da ordem da varredura. O texto
+  fica guardado porque um formulario pergunta uma vez por evento. }
+function TConversor.FormaDoMetodo(const AArquivoDFM,
+  AMetodo: string): TFormaHandler;
 var
+  vPas, vDecl, vLinha: string;
+  vBytes: TBytes;
+  vTexto: RawByteString;
   vLinhas: TStringList;
   vInt1, vFim: Integer;
-  vDecl: string;
 begin
-  if not Contem(ATexto, 'ReplyEvent') then
+  Result := fhIndefinida;
+  if Trim(AMetodo) = '' then
+    Exit;
+
+  if not SameText(FParArquivo, AArquivoDFM) then
+  begin
+    FParArquivo := AArquivoDFM;
+    FParTexto := '';
+    vPas := ChangeFileExt(AArquivoDFM, '.pas');
+    if TFile.Exists(vPas) then
+    begin
+      vBytes := TFile.ReadAllBytes(vPas);
+      if Length(vBytes) > 0 then
+      begin
+        SetLength(vTexto, Length(vBytes));
+        Move(vBytes[0], vTexto[1], Length(vBytes));
+        FParTexto := string(vTexto);
+      end;
+    end;
+  end;
+
+  if FParTexto = '' then
     Exit;
 
   vLinhas := TStringList.Create;
   try
-    vLinhas.Text := string(ATexto);
+    vLinhas.Text := FParTexto;
     for vInt1 := 0 to vLinhas.Count - 1 do
     begin
-      if not ContainsText(vLinhas[vInt1], 'ReplyEvent') then
+      vLinha := vLinhas[vInt1];
+      if not ContainsText(vLinha, AMetodo) then
         Continue;
 
-      // a lista de parametros pode vir quebrada; junta ate o ')'
+      { a lista de parametros pode vir quebrada; junta ate o ')' }
       vDecl := '';
       vFim := vInt1;
       while (vFim < vLinhas.Count) and (vFim - vInt1 < 8) do
@@ -906,17 +949,11 @@ begin
 
       if ContainsText(vDecl, 'Result: TStringList') or
          ContainsText(vDecl, 'Result : TStringList') then
-        Exit;
+        Exit(fhStringList);
 
       if ContainsText(vDecl, 'Result: string') or
          ContainsText(vDecl, 'Result : string') then
-      begin
-        Avisar(AArquivo, 'o handler devolve Result como string, que e a forma do ' +
-               'RDW 1.4.3 - descomente {$DEFINE RDW143} em src\RALRESTDW.inc e ' +
-               'recompile o pacote, senao o DFM liga o metodo e a chamada quebra',
-               taSemEquivalente);
-        Exit;
-      end;
+        Exit(fhString);
     end;
   finally
     FreeAndNil(vLinhas);
@@ -1027,12 +1064,7 @@ begin
           Continue;
         end;
 
-        if SameText(vClasse, 'TRESTDWAuthBasic') then
-        begin
-          ReescreverBloco(vLinhas, vSaida, vIdx, AArquivo, vNome, vClasse,
-                          'TRALServerBasicAuth', cMapaAuth, AQtd);
-          Continue;
-        end;
+        // o autenticador vai pela tabela cClasses, como as demais classes
       end;
 
       { Routes como conjunto so existe no RDW antigo; no 2.1 e no RAL cada
@@ -1060,6 +1092,20 @@ begin
           Inc(AQtd);
           Continue;
         end;
+      end;
+
+      { Cada handler decide sozinho: as duas formas estao publicadas, com nomes
+        diferentes, e aqui so se aponta para a certa. }
+      vProp := NomeDaProp(vTrim);
+      if MatchText(vProp, ['OnReplyEvent', 'OnReplyEventByType']) and
+         (FormaDoMetodo(AArquivo, ValorDaProp(vTrim)) = fhString) then
+      begin
+        vSaida.Add(StringReplace(vLinhas[vIdx], vProp, vProp + 'Str', []));
+        Avisar(AArquivo, Format('%s = %s esta na forma do RDW 1.4.3 -> %sStr',
+               [vProp, ValorDaProp(vTrim), vProp]), taRenomeado);
+        Inc(AQtd);
+        Inc(vIdx);
+        Continue;
       end;
 
       vSaida.Add(vLinhas[vIdx]);
@@ -1147,8 +1193,6 @@ begin
         FreeAndNil(vLinhas);
       end;
     end;
-
-    ConferirAssinatura(Result, AArquivo);
 
     Result := AjustarUses(Result, AArquivo, vUnits, vQtd);
     Inc(AQtd, vQtd);

@@ -10,7 +10,7 @@ uses
   Classes, SysUtils,
   RALCustomObjects, RALTypes, RALRESTDWEvents, RALStream, RALParams,
   RALRESTDWParamsMethods, RALRESTDWTypes, RALClient, RALRESTDWParams,
-  RALTools, RALResponse;
+  RALRESTDWOptions, RALTools, RALResponse;
 
 type
   TRALRESTDWSendEvent = (seGET, sePOST, sePUT, seDELETE, sePATCH);
@@ -29,6 +29,11 @@ type
     FAutoFetch: boolean;
     FFetched: boolean;
     FOnBeforeSend: TRALRESTDWBeforeSend;
+    FCriptOptions: TRALRESTDWCriptOptions;
+
+    procedure SetCriptOptions(AValue: TRALRESTDWCriptOptions);
+    procedure CriptoMudou(ASender: TObject);
+    procedure AplicarCripto;
 
     procedure SetModuleRoute(AValue: StringRAL);
     function GetGetEvents: boolean;
@@ -82,6 +87,10 @@ type
     property RALClient: TRALClient read FRALClient write SetRALClient;
     property ServerEventName: StringRAL read FServerEventName write FServerEventName;
     property OnBeforeSend: TRALRESTDWBeforeSend read FOnBeforeSend write FOnBeforeSend;
+    { vai para o CriptoOptions do TRALClient ligado - e o mesmo AES que o RDW
+      usa, so que aplicado pelo cliente e nao por este componente }
+    property CriptOptions: TRALRESTDWCriptOptions read FCriptOptions
+      write SetCriptOptions;
   end;
 
 implementation
@@ -95,12 +104,32 @@ begin
   FModuleRoute := '/';
   FAutoFetch := True;
   FFetched := False;
+  FCriptOptions := TRALRESTDWCriptOptions.Create;
+  FCriptOptions.OnChange := {$IFDEF FPC}@{$ENDIF}CriptoMudou;
 end;
 
 destructor TRALRESTDWClientEvents.Destroy;
 begin
+  FreeAndNil(FCriptOptions);
   FreeAndNil(FEvents);
   inherited;
+end;
+
+procedure TRALRESTDWClientEvents.SetCriptOptions(
+  AValue: TRALRESTDWCriptOptions);
+begin
+  FCriptOptions.Assign(AValue);
+end;
+
+procedure TRALRESTDWClientEvents.CriptoMudou(ASender: TObject);
+begin
+  AplicarCripto;
+end;
+
+procedure TRALRESTDWClientEvents.AplicarCripto;
+begin
+  if FRALClient <> nil then
+    RALRESTDWApplyCripto(FCriptOptions, FRALClient.CriptoOptions);
 end;
 
 procedure TRALRESTDWClientEvents.ClearEvents;
@@ -254,7 +283,6 @@ begin
         sePATCH  : FRALClient.Patch(vUrl, vResponse);
       end;
 
-      ANativeResult := StringRAL(IntToStr(vResponse.StatusCode));
       AParams.AssignResponse(vResponse);
 
       { mesma armadilha do lado da resposta: handler que devolve so o texto, sem
@@ -264,6 +292,12 @@ begin
         vParam := vResponse.Body;
       if vParam <> nil then
       begin
+        { No RDW o NativeResult e o corpo da resposta - TReplyOK no modo normal
+          e o texto cru do handler no dmRaw -, e as demos o mostram na tela
+          quando o evento nao declarou param de saida. Aqui ja saiu o codigo de
+          status, que nao e texto para ninguem ler. }
+        ANativeResult := vParam.AsString;
+
         vJsonParam := AParams.ItemsString[cUndefined];
         if vJsonParam = nil then
         begin
@@ -456,7 +490,10 @@ begin
   FRALClient := AValue;
 
   if FRALClient <> nil then
+  begin
     FRALClient.FreeNotification(Self);
+    AplicarCripto;
+  end;
 end;
 
 end.

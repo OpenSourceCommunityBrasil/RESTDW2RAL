@@ -32,14 +32,14 @@ Three rules follow from that, and breaking any of them breaks a migrated project
 1. **Publish everything the RDW class published, even what RAL cannot honour.** DFM streaming stops at the first unknown property and takes the whole form with it. An inert member says so in a comment beside itself; Delphi 12 rejects `deprecated` on a property, so the comment plus the converter's report is the whole warning channel.
 2. **The mapping lives in `RALRESTDWOptions.pas`, never in a shell.** `TRALServer` is abstract and the engine is the descendant, so there is one shell per RAL *engine* (the migrating user picks it, the RDW class name does not decide). Keeping `RALRESTDWApply*` outside them is what makes the next engine a thin file instead of a second copy of the rules.
 3. **Not every RAL base has a virtual constructor.** `TRALDBConnection.Create` is declared `overload`, not `override`, so it hides `TComponent`'s virtual one: a constructor declared in a descendant is never called when the form streams the component. `TRALRESTDWDatabase` initialises in `AfterConstruction`, which is virtual and runs before the first property is read. Check the ancestor before writing a constructor.
-4. **A `var` string parameter is `String`, never `StringRAL`.** `StringRAL` is `UTF8String` - one byte per character against two. The compiler refuses the mismatch on a normal call, and on a handler bound through the DFM (matched by name, signature unchecked) it does not even refuse: it corrupts. `SendEvent(..., var AError)`, `OnAuthRequest` and the `RDW143` `Result` all take `String`, exactly as RDW declares them.
+4. **A `var` string parameter is `String`, never `StringRAL`.** `StringRAL` is `UTF8String` - one byte per character against two. The compiler refuses the mismatch on a normal call, and on a handler bound through the DFM (matched by name, signature unchecked) it does not even refuse: it corrupts. `SendEvent(..., var AError)`, `OnAuthRequest` and `OnReplyEventStr`'s `Result` all take `String`, exactly as RDW declares them.
 
 It is an IDE component package, not an application: no `main`, **no test suite and no CI** (`.github/` holds only `FUNDING.yml`). Fifteen units in `src/`, demos under `exemplo/`.
 
 **Reference checkouts, all sibling directories, all read-only — never edit them:**
 - `../PascalRAL` — the RAL we build against (branch `dev`). Has its own `CLAUDE.md`; read it for `StringRAL`/`IntegerRAL`, `{$IFDEF FPC}@{$ENDIF}` on method pointers, `FixRoute`, `TRALParams`, typed params, `TRALModuleRoutes`, and the compiler recipes.
 - `../RDW_Phoenix` — REST Dataware 2.1 (`OpenSourceCommunityBrasil/REST-DataWare`). The authority on what a member should be called and do. `CORE/Source/Basic/uRESTDW{Params,ServerEvents}.pas` and `CORE/Source/Consts/uRESTDWConsts.pas` carry almost all of it.
-- `../RDW` — an older RDW checkout, useful only for what the `RDW143` directive selects.
+- `../RDW` — an older RDW checkout. Its `CORE/demos/Delphi/VCL` is where the real demos used to test the converter come from, and it is the authority on the 1.4.3 handler shape.
 
 ## Build / verify
 
@@ -74,6 +74,11 @@ $i = "$ral\base;$ral\languages;$ral\utils;<repo>\src"
 ```
 
 `RALRESTDWReg.pas` needs the design-time packages on top of that — a second `chk2.dpr` using only it, plus `-LU"rtl;designide"` (`designide.dcp` is in `$bds\lib\win32\release`, already on the `-U` path; there is no `DesignIntf.dcu` to find). The demos add one engine path each (`$ral\engine\indy`, `$ral\engine\netHTTP`) and need a generated `.res` — `brcc32 -fo<name>.res` over a one-line `.rc` written **without a BOM** (`Set-Content -Encoding ascii`; brcc32 rejects a UTF-8 BOM with "Bad character in source input").
+
+**Filter dcc32's output for `(Error|Fatal): [EF]\d`, not for `\) (Error|Fatal):`.** A
+missing resource comes out as `Error: E1026 File not found: 'X.res'` with no file name and
+no parenthesis before it, so the narrower pattern reported a failed build as a success and
+the absent `.exe` was only noticed later.
 
 Expected noise, all pre-existing: `W1057` implicit string casts by the hundred (PascalRAL's own), one `W1055` on `TRALRESTDWParams` for the `published` block on a plain `TObject`. Anything else is yours.
 
@@ -122,9 +127,23 @@ Three FPC-only defects have already been caught this way, and all three compile 
 
 `exemplo/delphi/servidor` + `exemplo/delphi/cliente` exercise every feature. For an automated pass, a console harness that drives `TRALRESTDWClientEvents` against the running server covers discovery, typed params, datasets, per-event auth and the failure paths in one run — that is how the current behaviour was validated (19 checks, all green).
 
-**Our own demos are not the real check.** They were written against this code and agree with it by construction; a migrating user's project was not. Copy a real RDW demo out of `../RDW/branch/dev/CORE/demos/Delphi/VCL` into the scratchpad, convert it, compile it, and run it. `SimpleServer` is the smallest complete one and the fastest signal: set `Active = True` in its `.dfm`, build with `-DRDW143`, and drive `/teste` with every verb (the handler answers 200 for GET/DELETE and 201 for POST/PUT/PATCH, so a wrong status is a real failure and not a guess). That loop is what found every defect worth finding here - the wrong bind port, the duplicated `uses`, the missing `TRESTDWAuthBasic` alias, the `var String` mismatch.
+**Our own demos are not the real check.** They were written against this code and agree with it by construction; a migrating user's project was not. `ferramentas/conversor/demos/` carries five real RDW demos **unconverted**, exactly as RDW publishes them minus credentials and machine paths - copy one out, convert it, compile it, and run it. Its `LEIAME.md` says what each exercises and what was blanked. `SimpleServer` is the smallest complete one and the fastest signal: set `Active = True` in its `.dfm` and drive `/teste` with every verb (the handler answers 200 for GET/DELETE and 201 for POST/PUT/PATCH, so a wrong status is a real failure and not a guess). That loop is what found every defect worth finding here - the wrong bind port, the duplicated `uses`, the missing `TRESTDWAuthBasic` alias, the `var String` mismatch.
 
-Those demos also come in two shapes and both must pass: `SimpleServer` is RDW 1.4.3 (`var Result: String`, `Routes = [crAll]`) and `FileTransfer` is RDW 2.1 (`const Result: TStringList`, `Routes.All`). The converter reports which one it saw.
+Those demos come in two shapes and both must pass: `SimpleServer` is RDW 1.4.3 (`var Result: String`, `Routes = [crAll]`) and `FileTransfer` is RDW 2.1 (`const Result: TStringList`, `Routes.All`). Both work against the same installed package - see *Two handler shapes* below. The converter reports each rename it makes.
+
+**Check the converted `.dfm` by RTTI, not by opening the IDE.** A property the shells do not
+publish is invisible until the designer refuses the form, and finding them one dialog at a
+time is a whole afternoon. A throwaway console program that links the eight runtime units,
+calls `RegisterClasses` with the shell classes by hand and then walks a `.dfm` - resolving
+each `object` line with `GetClass` and each `Prop.Sub = ` line with `GetPropInfo` - reports
+the whole list in one run, including inside `Events = <item ...>` collections. Two things
+are not published properties and must be skipped or they read as false positives: `Left`
+and `Top` (from `TComponent.DefineProperties`) and `.Strings` (from `TStrings`). That probe
+is how `CriptOptions`, `FailOverConnections`, `SSLVersions`, `SSLMode`, `ProxyOptions.Port`,
+`MaxAuthRetries`, `RequestCharset`, `AccessControlAllowOrigin`, `VerifyCert`, `CertMode`,
+`PortCert`, `OnWork*` and `BinaryCompatibleMode` were all found in one afternoon instead of
+thirteen round trips through the IDE. `RegisterComponents` does nothing outside the IDE and
+`LoadPackage` does not call a package's `Register`, so link the units - do not load the BPLs.
 
 ## Architecture
 
@@ -181,9 +200,23 @@ Both use `TRALBinaryWriter` and both start with a signature and a version, becau
 
 Bump the version whenever a field moves. The export exists so routes can be published without instantiating the data module; with `AutoRoutes` it is a fallback, not the main path.
 
-### `RDW143`
+### Two handler shapes, one package
 
-`src/RALRESTDW.inc` is the only conditional. Undefined (default) gives the RDW 2.x handler shape `(var AParams; const AResult: TStringList)`; `{$DEFINE RDW143}` gives the 1.4.3 shape `(var AParams; var AResult: StringRAL)`. `RALRESTDWEvents.pas` is the only unit that branches on it. Flipping it changes a published type: every wired DFM/LFM breaks and the package must be rebuilt.
+RDW 2.x hands the event result over as `const AResult: TStringList` and RDW 1.4.3 as
+`var AResult: string`. This used to be the `RDW143` directive in `src/RALRESTDW.inc`, which
+meant one installed package served one generation: switching rebuilt everything and broke
+every wired DFM.
+
+Both are published now, under different names - `OnReplyEvent`/`OnReplyEventByType` for the
+2.x shape and `OnReplyEventStr`/`OnReplyEventByTypeStr` for 1.4.3 - and `ReplyEvent` fires
+whichever is assigned. The converter picks the name when it rewrites the `.dfm`. The
+directive is gone; the `.inc` stays, empty, because the units include it.
+
+**The shape is per handler, not per file.** The RDW `FullServer` demo carries handlers of
+both generations side by side in `uDMPrincipal.pas`. Deciding by file bound half the events
+to the wrong signature, and because the DFM binds by name without checking, that is not a
+compile error - it is an access violation on the first call. `FormaDoMetodo` looks up the
+method named on the very `OnReplyEvent = ` line being rewritten.
 
 ### Where things live
 
@@ -201,12 +234,69 @@ Bump the version whenever a field moves. The export exists so routes can be publ
 | `RALRESTDWDBReg` | palette registration for the database half |
 | `RALRESTDWReg` | palette, component editors, property editor |
 
+### The database half: two seams, not one
+
+RDW puts `TRESTDWPoolerDB` inside the server DataModule and points it at a driver
+component; RAL hangs a `TRALDBModule` off the `TRALServer` and answers on a route. Three
+things have to happen for a migrated project to reach its database, and each was a separate
+silent failure:
+
+1. **Somebody has to create the `TRALDBModule`.** `TRALRESTDWPoolerDB.ConfigurarModulo`
+   existed and nothing called it, so `/datadm` answered 404 with everything else correct.
+   `TRALRESTDWModule.RefreshRoutes` now calls the `RALRESTDWMontarBanco` hook while it has
+   the DataModule instance in hand. It is a hook and not a call because `RALRESTDWPoolerDB`
+   lives in `RALRESTDWDB`: the events package must not drag RAL's database link along.
+2. **The link class has to be registered.** `TRALDBModule.DatabaseLink` is matched against
+   `TRALDBBase.DatabaseName`, and the registration is the `initialization` of the link unit
+   — `RALDBFireDAC` on Delphi, `RALDBSQLDB` on FPC. Without it in `uses` the server
+   answers *DBLink Property missing* on the first query. `RALRESTDWPoolerDB` names it, so
+   any project that links the shell gets it.
+3. **The project's own connection code has to run.** This is the one that matters. RDW
+   builds the connection in the `BeforeConnect` of the project's `TFDConnection`, per
+   request, reading an `.ini` or form fields — nothing is in the `.dfm`. RAL keeps the
+   connection as strings on the module and builds its own driver, so that handler would
+   never fire and the server would reach Firebird with no user and no path.
+   `TRALRESTDWPonteConexao` hooks `TRALDBModule.OnBeforeConnect`, which arrives with RAL's
+   connection and before it opens: it creates the project's DataModule, calls **its**
+   `BeforeConnect` through RTTI (`GetMethodProp`, no connection opened) and copies the
+   resulting `Params` across. Reading the params once at setup is not enough and looks
+   right until you try it.
+
+**`ChangeCount` is not the pending count.** RAL leaves FireDAC's `CachedUpdates` off and
+keeps pending statements in a private `TRALDBSQLCache`, so `ChangeCount` is always 0 and
+the cache is unreachable from a descendant. `TRALRESTDWClientSQL` counts them itself in
+`InternalPost`/`InternalDelete` — that is what `MassiveCount` reports, and what keeps
+`ApplyUpdates` from calling RAL with an empty cache, which faults inside RAL.
+
 ## Traps
 
 - **A lone body param travels without its name.** PascalRAL's `EncodeBody` skips multipart when there is exactly one body param and sends the raw value; the name arrives as `ral_body`. This bit both directions — `getevents` sends only `servereventname` when `AccessTag` is empty, and a handler returning just text answers with only `cUndefined`. Both sides now read in two steps (by name, then `Body`). Its own `CLAUDE.md` says not to "fix" this in RAL, so any new param that can travel alone needs the same two-step read.
 - **PascalRAL faults under `$R+` on any query with a parameter.** `RALDBSQLCache.GetQueryParams` (`src/database/RALDBSQLCache.pas`, line 308) does `vParam.Size := GetInt64Prop(vColetItem, 'Size')` - reading an `Integer` property as `Int64`. Range checking turns the truncation into `ERangeError`, and the IDE turns range checking on for every Debug build. Confirmed by map lookup, with a param whose `Size` is 0 and `DataType` is `ftInteger`; setting `Size` by hand does not help, because the bad read happens inside RAL. **There is no client-side workaround** - it has to be fixed there (`GetOrdProp`). The events half is unaffected. Until then the DB demos need range checking off.
 - **The DB calls are async in RAL and synchronous here.** `TRALDBConnection` posts `Open`/`ExecSQL`/`ApplyUpdates` with a callback and `ebMultiThread`, so they return before the answer exists. `TRALRESTDWClientSQL.WaitResponse` pumps `CheckSynchronize` until the callback lands, because RDW's are synchronous and ported code reads `RecordCount` on the next line. It re-enters: the callback calls `SetActive` again, and `FWaiting` is what keeps that from waiting on itself. `ThreadRequest` opts back out.
 - **An error raised inside the callback escapes the caller's `try..except`.** That is why `InternalError` only *stores* the message and `WaitResponse` raises it - in the context of whoever called `Open`.
+- **`RootPath` is a folder on disk, not a URL prefix.** RDW serves static files from it
+  (`IncludeTrailingPathDelimiter(FRootPath) + file`). Mapping it to the module's `Domain`
+  looked reasonable and broke every route in the `FullServer` demo, which does
+  `RootPath := ExtractFilePath(Application.ExeName)`. It feeds a `TRALWebModule.DocumentRoot`
+  now; that module only claims a request when a matching file exists inside the folder, so
+  it never shadows an event route.
+- **A lone OUT param comes back without its name.** The same trap as the request side:
+  PascalRAL skips multipart for a single body param, so `AResponse.ParamByName('result')`
+  finds nothing and the value was dropped in silence — `servertime` answered empty with
+  the server perfectly correct. `AssignResponse` falls back to `Body` when exactly one OUT
+  param was declared and none matched by name.
+- **`SendEvent`'s `ANativeResult` is the response body**, as in RDW (`TReplyOK` normally,
+  the handler's raw text in `dmRaw`). It used to carry the status code, which the demos
+  then showed on screen.
+- **RAL's memtable cannot be opened without a connection, so `OpenJson` does not work.**
+  `TRALDBFDMemTable.SetActive` raises *Connection not set* when `RALConnection` is nil and
+  goes to the server when it is not; there is no local path, and `CreateDataSet` needs one.
+  RDW's `OpenJson` is purely local - parse a JSON an API returned and show it - which is
+  what the `ConsultaCNPJ` demo does. The fix is one line in PascalRAL: in the nil-connection
+  branch of `SetActive`, call `inherited` instead of raising. Until then `OpenJson` raises a
+  message naming the cause rather than passing RAL's along. Do not "fix" it here by
+  assigning a throwaway connection - that reaches the server and comes back 404, which was
+  measured, not guessed.
 - **`ItemsString['x']` returns nil** when the param is not there — same as RDW, deliberately. Every new consumer needs the nil check.
 - **Do not subclass `TRALRESTDWServerEvents` without passing the item class.** `TRALRESTDWEventList.Create` takes `AItemClass` now; it used to pick it by comparing the owner's class *name* with a literal, which silently gave a descendant items with no handlers.
 - **`CreateDWParams` allocates and the caller owns the object.** It nils the `var` first, so an unknown event is detectable, but nothing frees it for you.

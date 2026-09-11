@@ -1203,20 +1203,43 @@ end;
 procedure TRALRESTDWParams.AssignResponse(AResponse: TRALResponse);
 var
   vInt1: IntegerRAL;
-  vParam: TRALRESTDWJSONParam;
+  vParam, vUnico: TRALRESTDWJSONParam;
   vRALParam: TRALParam;
+  vSaidas, vAchados: IntegerRAL;
 begin
+  vUnico := nil;
+  vSaidas := 0;
+  vAchados := 0;
+
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
-    if (vParam.ObjectDirection in [odOUT, odINOUT]) then
+    if not (vParam.ObjectDirection in [odOUT, odINOUT]) then
+      Continue;
+
+    Inc(vSaidas);
+    vUnico := vParam;
+
+    // a resposta so traz o que o servidor devolveu: sem o teste, um param
+    // ausente era um AV no cliente
+    vRALParam := AResponse.ParamByName(vParam.ParamName);
+    if vRALParam <> nil then
     begin
-      // a resposta so traz o que o servidor devolveu: sem o teste, um param
-      // ausente era um AV no cliente
-      vRALParam := AResponse.ParamByName(vParam.ParamName);
-      if vRALParam <> nil then
-        vParam.ReadFromRALParam(vRALParam);
+      vParam.ReadFromRALParam(vRALParam);
+      Inc(vAchados);
     end;
+  end;
+
+  { Param de saida sozinho viaja sem o nome. O PascalRAL nao monta multipart
+    para um unico param de corpo - manda o valor cru, e o nome chega como
+    ral_body. Ler so por nome descartava o valor calado: era por isso que o
+    servertime do FullServer voltava vazio, com o servidor respondendo certo.
+    Mesma leitura em dois passos que o lado do servidor ja faz. }
+  if (vSaidas = 1) and (vAchados = 0) then
+  begin
+    vRALParam := AResponse.Body;
+    if vRALParam <> nil then
+      vUnico.ReadFromRALParam(vRALParam);
   end;
 end;
 
