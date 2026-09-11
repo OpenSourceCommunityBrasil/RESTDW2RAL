@@ -24,6 +24,16 @@ type
 
     procedure CreateRoutes;
     procedure ImportFromStream(AStream : TStream);
+
+    /// instancia a classe registrada em ClassModule; nil se nao estiver registrada
+    function CreateModuleObject: TComponent;
+    /// devolve o ServerEvents de AObject cujo nome completo e AccessTag conferem
+    function FindServerEvents(AObject: TComponent;
+                              const AName, AAccessTag: StringRAL): TComponent;
+    /// liga ReplyRoutes nas rotas dos eventos, fora do caminho da requisicao
+    procedure BindRoutes;
+
+    procedure Loaded; override;
   public
     constructor Create(AOwner : TComponent); override;
     destructor Destroy; override;
@@ -45,96 +55,145 @@ type
 implementation
 
 uses
-  RALRESTDWServerEvents, RALRESTDWParams;
+  RALRESTDWServerEvents, RALRESTDWParams, RALParams;
+
+/// ParamByName devolve nil quando o parametro nao veio na requisicao
+function RequestParam(ARequest: TRALRequest; const AName: StringRAL): StringRAL;
+var
+  vParam: TRALParam;
+begin
+  Result := '';
+  vParam := ARequest.ParamByName(AName);
+  if vParam <> nil then
+    Result := vParam.AsString;
+end;
 
 { TRALRESTDWModule }
 
-procedure TRALRESTDWModule.ReplyRoutes(ARequest: TRALRequest; AResponse: TRALResponse);
+function TRALRESTDWModule.CreateModuleObject: TComponent;
 var
   vClass: TComponentClass;
-  vObj, vComp: TComponent;
-  vInt1: IntegerRAL;
-  vEvent: TRALRESTDWEventServer;
-  vServerEventName, vServer, vAccessTag, vAccess: StringRAL;
-  vBlock: boolean;
 begin
+  Result := nil;
   vClass := TComponentClass(GetClass(FClassModule));
+  if vClass <> nil then
+    { Owner nil de proposito: o servidor atende em varias threads e a lista de
+      componentes do Owner nao tem protecao - dois requests simultaneos criando
+      e destruindo filhos do modulo corrompiam a lista. O modulo chega ao
+      desenvolvedor por TRALRESTDWParams.Module. }
+    Result := vClass.Create(nil);
+end;
+
+function TRALRESTDWModule.FindServerEvents(AObject: TComponent;
+  const AName, AAccessTag: StringRAL): TComponent;
+var
+  vInt1: IntegerRAL;
+  vComp: TComponent;
+begin
+  Result := nil;
+  if AObject = nil then
+    Exit;
+
+  for vInt1 := 0 to Pred(AObject.ComponentCount) do
+  begin
+    vComp := AObject.Components[vInt1];
+    if (not vComp.InheritsFrom(TRALRESTDWServerEvents)) or
+       (not SameText(Format('%s.%s', [AObject.ClassName, vComp.Name]), AName)) then
+      Continue;
+
+    // o nome e unico: achou o componente, so falta liberar ou nao pelo AccessTag
+    if TRALRESTDWServerEvents(vComp).AccessTag = AAccessTag then
+      Result := vComp;
+    Break;
+  end;
+end;
+
+procedure TRALRESTDWModule.ReplyRoutes(ARequest: TRALRequest; AResponse: TRALResponse);
+var
+  vObj, vComp: TComponent;
+  vEvent: TRALRESTDWEventServer;
+begin
   AResponse.Answer(403);
 
-  if vClass <> nil then begin
-    vServerEventName := ARequest.ParamByName('servereventname').AsString;
-    vAccessTag := ARequest.ParamByName('accesstag').AsString;
+  vObj := CreateModuleObject;
+  if vObj = nil then
+    Exit;
 
-    vObj := vClass.Create(Self);
-    try
-      for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
-        if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
-          vComp := vObj.Components[vInt1];
-          vServer := Format('%s.%s', [vClass.ClassName, vComp.Name]);
-          vAccess := TRALRESTDWServerEvents(vComp).AccessTag;
-          if SameText(vServer, vServerEventName) then
-          begin
-            vBlock := ((vAccess <> '') and (vAccess <> vAccessTag)) or
-                      ((vAccessTag <> '') and (vAccess <> vAccessTag));
-
-            if not vBlock then begin
-              vEvent := TRALRESTDWServerEvents(vComp).CanAnswerEvent(ARequest);
-              if vEvent <> nil then
-                vEvent.ReplyEvent(ARequest, AResponse)
-            end;
-          end;
-        end;
-      end;
-    finally
-      FreeAndNil(vObj);
+  try
+    vComp := FindServerEvents(vObj, RequestParam(ARequest, 'servereventname'),
+                                    RequestParam(ARequest, 'accesstag'));
+    if vComp <> nil then
+    begin
+      vEvent := TRALRESTDWServerEvents(vComp).CanAnswerEvent(ARequest, Domain);
+      if vEvent <> nil then
+        vEvent.ReplyEvent(ARequest, AResponse, Self);
     end;
+  finally
+    FreeAndNil(vObj);
   end;
 end;
 
 procedure TRALRESTDWModule.GetEvents(ARequest: TRALRequest; AResponse: TRALResponse);
 var
-  vServerEventName, vServer, vAccessTag, vAccess: StringRAL;
-  vClass: TComponentClass;
   vObj, vComp: TComponent;
-  vInt1: IntegerRAL;
   vStream: TStream;
-  vBlock: boolean;
 begin
-  vClass := TComponentClass(GetClass(FClassModule));
   AResponse.Answer(403);
 
-  if vClass <> nil then begin
-    vServerEventName := ARequest.ParamByName('servereventname').AsString;
-    vAccessTag := ARequest.ParamByName('accesstag').AsString;
+  vObj := CreateModuleObject;
+  if vObj = nil then
+    Exit;
 
-    vObj := vClass.Create(Self);
-    try
-      for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
-        if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
-          vComp := vObj.Components[vInt1];
-          vServer := Format('%s.%s', [vClass.ClassName, vComp.Name]);
-          vAccess := TRALRESTDWServerEvents(vComp).AccessTag;
-          if SameText(vServer, vServerEventName) then
-          begin
-            vBlock := ((vAccess <> '') and (vAccess <> vAccessTag)) or
-                      ((vAccessTag <> '') and (vAccess <> vAccessTag));
-
-            if not vBlock then
-            begin
-              AResponse.Clear;
-              vStream := TRALRESTDWServerEvents(vComp).GetEvents;
-              try
-                AResponse.Answer(HTTP_OK, vStream, rctAPPLICATIONOCTETSTREAM);
-              finally
-                FreeAndNil(vStream);
-              end;
-            end;
-          end;
-        end;
+  try
+    vComp := FindServerEvents(vObj, RequestParam(ARequest, 'servereventname'),
+                                    RequestParam(ARequest, 'accesstag'));
+    if vComp <> nil then
+    begin
+      AResponse.Clear;
+      vStream := TRALRESTDWServerEvents(vComp).GetEvents;
+      try
+        AResponse.Answer(HTTP_OK, vStream, rctAPPLICATIONOCTETSTREAM);
+      finally
+        FreeAndNil(vStream);
       end;
-    finally
-      FreeAndNil(vObj);
     end;
+  finally
+    FreeAndNil(vObj);
+  end;
+end;
+
+procedure TRALRESTDWModule.GetServerEventsList(ARequest: TRALRequest; AResponse: TRALResponse);
+var
+  vObj, vComp: TComponent;
+  vInt1: IntegerRAL;
+  vResult, vAccessTag: StringRAL;
+begin
+  AResponse.Answer(403);
+
+  vObj := CreateModuleObject;
+  if vObj = nil then
+    Exit;
+
+  try
+    vAccessTag := RequestParam(ARequest, 'accesstag');
+    vResult := '';
+
+    for vInt1 := 0 to Pred(vObj.ComponentCount) do
+    begin
+      vComp := vObj.Components[vInt1];
+      if vComp.InheritsFrom(TRALRESTDWServerEvents) and
+         (TRALRESTDWServerEvents(vComp).AccessTag = vAccessTag) then
+      begin
+        if vResult <> '' then
+          vResult := vResult + '|';
+        vResult := vResult + Format('%s.%s', [vObj.ClassName, vComp.Name]);
+      end;
+    end;
+
+    AResponse.Clear;
+    AResponse.Answer(HTTP_OK, vResult, rctTEXTPLAIN);
+  finally
+    FreeAndNil(vObj);
   end;
 end;
 
@@ -148,65 +207,39 @@ begin
     Result.Add(FRDWRoutes.Items[vInt]);
 end;
 
-procedure TRALRESTDWModule.GetServerEventsList(ARequest: TRALRequest; AResponse: TRALResponse);
-var
-  vClass: TComponentClass;
-  vObj, vComp: TComponent;
-  vInt1: IntegerRAL;
-  vResult: StringRAL;
-  vAccessTag, vAccess: StringRAL;
-  vBlock: boolean;
-begin
-  vClass := TComponentClass(GetClass(FClassModule));
-  AResponse.Answer(403);
-
-  if vClass <> nil then begin
-    vAccessTag := ARequest.ParamByName('accesstag').AsString;
-
-    vObj := vClass.Create(Self);
-    try
-      vResult := '';
-      for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
-        if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
-          vComp := vObj.Components[vInt1];
-          vAccess := TRALRESTDWServerEvents(vComp).AccessTag;
-
-          vBlock := ((vAccess <> '') and (vAccess <> vAccessTag)) or
-                    ((vAccessTag <> '') and (vAccess <> vAccessTag));
-          if not vBlock then
-          begin
-            if vResult <> '' then
-              vResult := vResult + '|';
-            vResult := vResult + Format('%s.%s', [vClass.ClassName, vComp.Name]);
-          end;
-        end;
-      end;
-
-      AResponse.Clear;
-      AResponse.Answer(200, vResult, rctTEXTPLAIN);
-    finally
-      FreeAndNil(vObj);
-    end;
-  end;
-end;
-
 procedure TRALRESTDWModule.CreateRoutes;
 var
   vRoute: TRALRoute;
 begin
   FRDWRoutes.Clear;
 
+  // o Domain e aplicado por TRALBaseRoute.GetFullRoute; repeti-lo aqui duplicava o prefixo
   vRoute := TRALRoute(FRDWRoutes.Add);
   vRoute.Name := 'getevents';
-  vRoute.Route := Domain + '/getevents';
+  vRoute.Route := '/getevents';
   vRoute.OnReply := {$IFDEF FPC}@{$ENDIF}GetEvents;
   vRoute.AllowedMethods := [amPOST, amOPTIONS];
 
   vRoute := TRALRoute(FRDWRoutes.Add);
   vRoute.Name := 'getservereventslist';
-  vRoute.Route := Domain + '/getservereventslist';
+  vRoute.Route := '/getservereventslist';
   vRoute.OnReply := {$IFDEF FPC}@{$ENDIF}GetServerEventsList;
   vRoute.AllowedMethods := [amPOST, amOPTIONS];
+end;
+
+procedure TRALRESTDWModule.BindRoutes;
+var
+  vInt1: IntegerRAL;
+begin
+  for vInt1 := 0 to Pred(Routes.Count) do
+    TRALRoute(Routes.Items[vInt1]).OnReply := {$IFDEF FPC}@{$ENDIF}ReplyRoutes;
+end;
+
+procedure TRALRESTDWModule.Loaded;
+begin
+  inherited Loaded;
+  // rotas montadas a mao no design chegam sem handler
+  BindRoutes;
 end;
 
 procedure TRALRESTDWModule.ImportFromStream(AStream: TStream);
@@ -217,6 +250,10 @@ var
   vRoute, vRouteName, vDescription: StringRAL;
   vParamRoute: TRALRouteParam;
 begin
+  // arquivo vazio nao pode derrubar as rotas que ja estao publicadas
+  if (AStream = nil) or (AStream.Size < SizeOf(IntegerRAL)) then
+    Exit;
+
   Routes.Clear;
 
   vWriter := TRALBinaryWriter.Create(AStream);
@@ -231,7 +268,7 @@ begin
         vRoute := vWriter.ReadString;
         vDescription := vWriter.ReadString;
 
-        vObjRoute := CreateRoute(vRoute, nil, vDescription);
+        vObjRoute := CreateRoute(vRoute, {$IFDEF FPC}@{$ENDIF}ReplyRoutes, vDescription);
         vObjRoute.Name := vRouteName;
 
         vTotParam := vWriter.ReadInteger;
@@ -266,9 +303,15 @@ function TRALRESTDWModule.CanAnswerRoute(ARequest: TRALRequest;
 begin
   Result := inherited CanAnswerRoute(ARequest, AResponse);
   if Result <> nil then
-    Result.OnReply := {$IFDEF FPC}@{$ENDIF}ReplyRoutes
+  begin
+    // cobre a rota criada em runtime, depois do Loaded
+    if not Assigned(Result.OnReply) then
+      Result.OnReply := {$IFDEF FPC}@{$ENDIF}ReplyRoutes;
+  end
   else
+  begin
     Result := FRDWRoutes.CanAnswerRoute(ARequest);
+  end;
 end;
 
 function TRALRESTDWModule.ExportToStream: TStream;
@@ -280,32 +323,37 @@ end;
 procedure TRALRESTDWModule.ExportToStream(AStream: TStream);
 var
   vWriter : TRALBinaryWriter;
-  vClass: TComponentClass;
   vObj, vComp: TComponent;
   vTotal, vInt1: IntegerRAL;
 begin
   vWriter := TRALBinaryWriter.Create(AStream);
   try
-    vClass := TComponentClass(GetClass(FClassModule));
-    if vClass <> nil then begin
-      vObj := vClass.Create(nil);
+    // o total e reservado agora e reescrito no fim, com o stream de volta no zero
+    vTotal := 0;
+    vWriter.WriteInteger(vTotal);
+
+    vObj := CreateModuleObject;
+    if vObj <> nil then
+    begin
       try
-        vTotal := 0;
-        vWriter.WriteInteger(vTotal);
-        for vInt1 := 0 to Pred(vObj.ComponentCount) do begin
-          if vObj.Components[vInt1].InheritsFrom(TRALRESTDWServerEvents) then begin
-            vComp := vObj.Components[vInt1];
+        for vInt1 := 0 to Pred(vObj.ComponentCount) do
+        begin
+          vComp := vObj.Components[vInt1];
+          if vComp.InheritsFrom(TRALRESTDWServerEvents) then
+          begin
             TRALRESTDWServerEvents(vComp).ExportEvents(vWriter);
             vTotal := vTotal + 1;
           end;
         end;
-        AStream.Position := 0;
-        vWriter.WriteInteger(vTotal);
-        AStream.Position := 0;
       finally
         FreeAndNil(vObj);
       end;
+
+      AStream.Position := 0;
+      vWriter.WriteInteger(vTotal);
     end;
+
+    AStream.Position := 0;
   finally
     FreeAndNil(vWriter);
   end;
@@ -319,10 +367,7 @@ begin
     AFile := FFileExporter;
 
   if Trim(AFile) = '' then
-  begin
     raise Exception.Create('FileName not assigned');
-    Exit;
-  end;
 
   vStream := TRALBufFileStream.Create(AFile, fmCreate);
   try
@@ -340,10 +385,7 @@ begin
     AFile := FFileExporter;
 
   if Trim(AFile) = '' then
-  begin
     raise Exception.Create('FileName not assigned');
-    Exit;
-  end;
 
   vStream := TFileStream.Create(AFile, fmOpenRead);
   try

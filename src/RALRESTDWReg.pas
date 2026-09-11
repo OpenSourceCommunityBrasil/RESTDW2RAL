@@ -23,6 +23,9 @@ type
   { TRALRESTDWClientEventsMenu }
 
   TRALRESTDWClientEventsMenu = Class(TComponentEditor)
+  protected
+    /// marca o form como alterado; sem isso o trabalho do verbo se perde
+    procedure MarkModified;
   public
     function GetVerbCount: Integer; override;
     function GetVerb(AIndex : Integer): string; override;
@@ -32,6 +35,9 @@ type
   { TRALRESTDWModulesMenu }
 
   TRALRESTDWModulesMenu = Class(TComponentEditor)
+  protected
+    /// marca o form como alterado; sem isso o trabalho do verbo se perde
+    procedure MarkModified;
   public
     function GetVerbCount: Integer; override;
     function GetVerb(AIndex : Integer): string; override;
@@ -69,21 +75,38 @@ var
   vInt1: IntegerRAL;
 begin
   vClient := TRALRESTDWClientEvents(GetComponent(0));
-  if vClient <> nil then begin
-    vList := TStringList.Create;
-    try
-      vList.LineBreak := '|';
-      vList.Text := vClient.GetServerEvents;
+  if vClient = nil then
+    Exit;
 
-      for vInt1 := 0 to Pred(vList.Count) do
-        Proc(vList.Strings[vInt1]);
-    finally
-      FreeAndNil(vList);
+  vList := TStringList.Create;
+  try
+    vList.LineBreak := '|';
+    try
+      vList.Text := vClient.GetServerEvents;
+    except
+      // servidor fora do ar nao pode virar dialogo de excecao dentro da IDE:
+      // a lista fica vazia e o nome continua editavel na mao
+      Exit;
     end;
+
+    for vInt1 := 0 to Pred(vList.Count) do
+      Proc(vList.Strings[vInt1]);
+  finally
+    FreeAndNil(vList);
   end;
 end;
 
 { TRALRESTDWClientEventsMenu }
+
+procedure TRALRESTDWClientEventsMenu.MarkModified;
+begin
+  {$IFDEF FPC}
+    Modified;
+  {$ELSE}
+    if Designer <> nil then
+      Designer.Modified;
+  {$ENDIF}
+end;
 
 function TRALRESTDWClientEventsMenu.GetVerbCount: Integer;
 begin
@@ -92,6 +115,7 @@ end;
 
 function TRALRESTDWClientEventsMenu.GetVerb(AIndex: Integer): string;
 begin
+  Result := '';
   case AIndex of
     0 : Result := 'Get Events';
   end;
@@ -110,6 +134,7 @@ begin
         vStream := vClient.GetEvents;
         try
           vClient.SetEvents(vStream);
+          MarkModified;
         finally
           FreeAndNil(vStream);
         end;
@@ -120,6 +145,16 @@ end;
 
 { TRALRESTDWModulesMenu }
 
+procedure TRALRESTDWModulesMenu.MarkModified;
+begin
+  {$IFDEF FPC}
+    Modified;
+  {$ELSE}
+    if Designer <> nil then
+      Designer.Modified;
+  {$ENDIF}
+end;
+
 function TRALRESTDWModulesMenu.GetVerbCount: Integer;
 begin
   Result := 1;
@@ -127,6 +162,7 @@ end;
 
 function TRALRESTDWModulesMenu.GetVerb(AIndex: Integer): string;
 begin
+  Result := '';
   case AIndex of
     0 : Result := 'Import Events';
   end;
@@ -141,8 +177,12 @@ begin
       vModule := TRALRESTDWModule(GetComponent);
       if vModule <> nil then
       begin
-        if FileExists(vModule.FileExporter) then
-          vModule.ImportFromFile(vModule.FileExporter);
+        if not FileExists(vModule.FileExporter) then
+          raise Exception.CreateFmt('Arquivo de eventos nao encontrado: "%s"',
+                                    [vModule.FileExporter]);
+
+        vModule.ImportFromFile(vModule.FileExporter);
+        MarkModified;
       end;
     end;
   end;

@@ -115,6 +115,7 @@ type
   private
     FParams: TList;
     FRequest: TRALRequest;
+    FModule: TComponent;
   protected
     procedure ClearParams;
 
@@ -139,6 +140,7 @@ type
     property ItemsString[AName: StringRAL]: TRALRESTDWJSONParam read GetParamName write SetParamName;
   published
     property Request : TRALRequest read FRequest write FRequest;
+    property Module : TComponent read FModule write FModule;
   end;
 
 implementation
@@ -579,6 +581,7 @@ begin
   inherited;
   FParams := TList.Create;
   FRequest := nil;
+  FModule := nil;
 end;
 
 destructor TRALRESTDWParams.Destroy;
@@ -622,12 +625,19 @@ procedure TRALRESTDWParams.AssignResponse(AResponse: TRALResponse);
 var
   vInt1: IntegerRAL;
   vParam: TRALRESTDWJSONParam;
+  vRALParam: TRALParam;
 begin
   for vInt1 := 0 to Pred(FParams.Count) do
   begin
     vParam := TRALRESTDWJSONParam(FParams.Items[vInt1]);
     if (vParam.ObjectDirection in [odOUT, odINOUT]) then
-      vParam.AsStream := AResponse.ParamByName(vParam.ParamName).Content
+    begin
+      // a resposta so traz o que o servidor devolveu: sem o teste, um param
+      // ausente era um AV no cliente
+      vRALParam := AResponse.ParamByName(vParam.ParamName);
+      if vRALParam <> nil then
+        vParam.AsStream := vRALParam.Content;
+    end;
   end;
 end;
 

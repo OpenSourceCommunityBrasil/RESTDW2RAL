@@ -16,10 +16,9 @@ object Form1: TForm1
     OnClick = Button1Click
   end
   object ce: TRALRESTDWClientEvents
-    AccessTag = 'teste'
     Events = <    
       item
-        BaseURL = '/ping'
+        BaseURL = '/'
         DefaultContentType = 'application/json'
         EventName = 'ping'
         Params = <        
@@ -40,7 +39,7 @@ object Form1: TForm1
       end>
     ModuleRoute = '/'
     RALClient = cliente
-    ServerEventName = 'Tdm_rest.srv1'
+    ServerEventName = 'Tdm_restdw.server_events'
     Left = 144
     Top = 75
   end

@@ -117,12 +117,12 @@ object fprincipal: Tfprincipal
   object rdw: TRALRESTDWModule
     Server = server
     Domain = '/'
-    ClassName = 'Tdm_restdw'
+    ClassModule = 'Tdm_restdw'
     Routes = <
       item
         InputParams = <>
         Route = '/ping'
-        AllowedMethods = [amGET, amOPTIONS]
+        AllowedMethods = [amGET, amPOST, amOPTIONS]
         AllowURIParams = False
         Callback = False
         Name = 'ping'

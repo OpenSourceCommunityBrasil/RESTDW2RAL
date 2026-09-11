@@ -23,7 +23,11 @@ type
     procedure SetModuleRoute(AValue: StringRAL);
   protected
     procedure SetRALClient(const AValue: TRALClient);
+    procedure SetEventList(const AValue: TRALRESTDWEventList);
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+
+    /// rota do evento ja com o dominio do modulo no servidor
+    function EventUrl(AEvent: TRALRESTDWEventBase): StringRAL;
   public
     constructor Create(AOwner : TComponent); override;
     destructor Destroy; override;
@@ -43,7 +47,7 @@ type
     function GetEvents: TStream;
   published
     property AccessTag : StringRAL read FAccessTag write FAccessTag;
-    property Events : TRALRESTDWEventList read FEvents write FEvents;
+    property Events : TRALRESTDWEventList read FEvents write SetEventList;
     property ModuleRoute: StringRAL read FModuleRoute write SetModuleRoute;
     property RALClient: TRALClient read FRALClient write SetRALClient;
     property ServerEventName: StringRAL read FServerEventName write FServerEventName;
@@ -65,39 +69,54 @@ begin
   FModuleRoute := '/';
 end;
 
-procedure TRALRESTDWClientEvents.CreateDWParams(AEventName: StringRAL; var AParams: TRALRESTDWParams);
-var
-  vEvent: TRALRESTDWEventBase;
-  vInt1: IntegerRAL;
-  vFound: boolean;
-  vParam: TRALRESTDWJSONParam;
-  vParamMethod: TRALRESTDWParamMethod;
-begin
-  vEvent := FEvents.EventByName[AEventName];
-  if vEvent <> nil then
-  begin
-    AParams := TRALRESTDWParams.Create;
-    for vInt1 := 0 To Pred(vEvent.Params.Count) do
-    begin
-      vParamMethod := TRALRESTDWParamMethod(vEvent.Params.Items[vInt1]);
-      vParam := AParams.ItemsString[vParamMethod.ParamName];
-      if vParam = nil then
-        vParam := AParams.NewParam;
-
-      vParam.ParamName := vParamMethod.ParamName;
-      vParam.Alias := vParamMethod.Alias;
-      vParam.ObjectDirection := vParamMethod.ObjectDirection;
-      vParam.ObjectValue := vParamMethod.ObjectValue;
-      vParam.Encoded := vParamMethod.Encoded;
-      vParam.AsString := vParamMethod.DefaultValue;
-    end;
-  end;
-end;
-
 destructor TRALRESTDWClientEvents.Destroy;
 begin
   FreeAndNil(FEvents);
   inherited;
+end;
+
+procedure TRALRESTDWClientEvents.SetEventList(const AValue: TRALRESTDWEventList);
+begin
+  FEvents.Assign(AValue);
+end;
+
+function TRALRESTDWClientEvents.EventUrl(AEvent: TRALRESTDWEventBase): StringRAL;
+begin
+  // GetRoute e relativo ao modulo; o dominio do modulo vem do ModuleRoute
+  Result := FixRoute(FModuleRoute + '/' + AEvent.GetRoute);
+end;
+
+procedure TRALRESTDWClientEvents.CreateDWParams(AEventName: StringRAL; var AParams: TRALRESTDWParams);
+var
+  vEvent: TRALRESTDWEventBase;
+  vInt1: IntegerRAL;
+  vParam: TRALRESTDWJSONParam;
+  vParamMethod: TRALRESTDWParamMethod;
+begin
+  // sempre definido: evento inexistente deixava a variavel do chamador intacta
+  AParams := nil;
+
+  vEvent := FEvents.EventByName[AEventName];
+  if vEvent = nil then
+    Exit;
+
+  AParams := TRALRESTDWParams.Create;
+  for vInt1 := 0 To Pred(vEvent.Params.Count) do
+  begin
+    vParamMethod := TRALRESTDWParamMethod(vEvent.Params.Items[vInt1]);
+    vParam := AParams.ItemsString[vParamMethod.ParamName];
+    if vParam = nil then
+      vParam := AParams.NewParam;
+
+    // AsString carimba ObjectValue := ovString, entao o valor vai antes do tipo
+    vParam.AsString := vParamMethod.DefaultValue;
+    vParam.ParamName := vParamMethod.ParamName;
+    vParam.Alias := vParamMethod.Alias;
+    vParam.TypeObject := vParamMethod.TypeObject;
+    vParam.ObjectDirection := vParamMethod.ObjectDirection;
+    vParam.ObjectValue := vParamMethod.ObjectValue;
+    vParam.Encoded := vParamMethod.Encoded;
+  end;
 end;
 
 procedure TRALRESTDWClientEvents.Notification(AComponent: TComponent; Operation: TOperation);
@@ -127,54 +146,70 @@ var
   vJsonParam: TRALRESTDWJSONParam;
   vStream: TStream;
   vResponse : TRALResponse;
+  vUrl : StringRAL;
 begin
   Result := False;
+
+  if FRALClient = nil then
+    raise Exception.Create('Property RALClient not assigned');
+
   vEvent := FEvents.EventByName[AEventName];
-  if vEvent <> nil then
+  if vEvent = nil then
   begin
-    FRALClient.Request.Clear;
-    if FAccessTag <> '' then
-      FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
-    FRALClient.Request.Params.AddParam('servereventname', FServerEventName, rpkBODY);
+    AError := Format('Event "%s" not found', [AEventName]);
+    Exit;
+  end;
 
-    AParams.AppendRequest(FRALClient.Request);
+  FRALClient.Request.Clear;
+  if FAccessTag <> '' then
+    FRALClient.Request.Params.AddParam('accesstag', FAccessTag, rpkBODY);
+  FRALClient.Request.Params.AddParam('servereventname', FServerEventName, rpkBODY);
 
-    vResponse := nil;
+  AParams.AppendRequest(FRALClient.Request);
+
+  vUrl := EventUrl(vEvent);
+  vResponse := nil;
+  try
     try
-      try
-        case AEventType of
-          seGET    : FRALClient.Get(vEvent.GetRoute, vResponse);
-          sePOST   : FRALClient.Post(vEvent.GetRoute, vResponse);
-          sePUT    : FRALClient.Put(vEvent.GetRoute, vResponse);
-          seDELETE : FRALClient.Delete(vEvent.GetRoute, vResponse);
-          sePATCH  : FRALClient.Patch(vEvent.GetRoute, vResponse);
-        end;
-        Result := True;
-        AParams.AssignResponse(vResponse);
+      case AEventType of
+        seGET    : FRALClient.Get(vUrl, vResponse);
+        sePOST   : FRALClient.Post(vUrl, vResponse);
+        sePUT    : FRALClient.Put(vUrl, vResponse);
+        seDELETE : FRALClient.Delete(vUrl, vResponse);
+        sePATCH  : FRALClient.Patch(vUrl, vResponse);
+      end;
 
-        vParam := vResponse.ParamByName(cUndefined);
-        if vParam <> nil then
-        begin
-          vJsonParam := AParams.NewParam;
-          vJsonParam.ParamName := cUndefined;
+      AParams.AssignResponse(vResponse);
 
-          vStream := vParam.SaveToStream;
-          try
-            vJsonParam.LoadFromStream(vStream);
-          finally
-            FreeAndNil(vStream);
-          end;
-        end;
-      except
-        on e : Exception do
-        begin
-          AError := e.Message;
-          ANativeResult := IntToStr(vResponse.StatusCode);
+      vParam := vResponse.ParamByName(cUndefined);
+      if vParam <> nil then
+      begin
+        vJsonParam := AParams.NewParam;
+        vJsonParam.ParamName := cUndefined;
+
+        vStream := vParam.SaveToStream;
+        try
+          vJsonParam.LoadFromStream(vStream);
+        finally
+          FreeAndNil(vStream);
         end;
       end;
-    finally
-      FreeAndNil(vResponse);
+
+      // so no fim: antes o True era marcado logo apos a chamada e sobrevivia a
+      // uma excecao na leitura da resposta
+      Result := True;
+    except
+      on e : Exception do
+      begin
+        AError := e.Message;
+        // ExecuteSingle libera a resposta e re-lanca em erro de transporte,
+        // entao aqui vResponse e justamente nil
+        if vResponse <> nil then
+          ANativeResult := IntToStr(vResponse.StatusCode);
+      end;
     end;
+  finally
+    FreeAndNil(vResponse);
   end;
 end;
 
@@ -228,10 +263,7 @@ begin
   Result := '';
 
   if FRALClient = nil then
-  begin
     raise Exception.Create('Property RALClient not assigned');
-    Exit;
-  end;
 
   FRALClient.Request.Clear;
   if FAccessTag <> '' then
@@ -263,10 +295,7 @@ begin
   Result := nil;
 
   if FRALClient = nil then
-  begin
     raise Exception.Create('Property RALClient not assigned');
-    Exit;
-  end;
 
   FRALClient.Request.Clear;
   FRALClient.Request.ContentType := 'text/plain';
@@ -284,9 +313,7 @@ begin
         Result := vParam.SaveToStream;
     except
       on e : Exception do
-      begin
         raise Exception.CreateFmt('Erro ao recuperar os Events: %s', [e.Message]);
-      end;
     end;
   finally
     FreeAndNil(vResponse);

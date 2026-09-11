@@ -130,12 +130,14 @@ begin
   begin
     with ADest as TRALRESTDWJSONParam do
     begin
+      // AsString carimba ObjectValue := ovString, entao o valor vai antes do tipo
+      AsString := Self.DefaultValue;
       TypeObject := Self.TypeObject;
       ObjectDirection := Self.ObjectDirection;
       ObjectValue := Self.ObjectValue;
       ParamName := Self.ParamName;
       Alias := Self.Alias;
-      AsString := Self.DefaultValue;
+      Encoded := Self.Encoded;
     end;
   end
   else if ADest.InheritsFrom(TRALRESTDWParamMethod) then
@@ -148,6 +150,7 @@ begin
       ParamName := Self.ParamName;
       Alias := Self.Alias;
       DefaultValue := Self.DefaultValue;
+      Encoded := Self.Encoded;
     end;
   end;
 end;

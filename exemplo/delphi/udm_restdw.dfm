@@ -5,10 +5,24 @@ object dm_restdw: Tdm_restdw
   object server_events: TRALRESTDWServerEvents
     Events = <
       item
-        BaseURL = '/ping'
+        BaseURL = '/'
         DefaultContentType = 'application/json'
         EventName = 'ping'
-        Params = <>
+        Params = <
+          item
+            TypeObject = toParam
+            ObjectDirection = odINOUT
+            ObjectValue = ovString
+            ParamName = 'nome'
+            Encoded = False
+          end
+          item
+            TypeObject = toParam
+            ObjectDirection = odINOUT
+            ObjectValue = ovFloat
+            ParamName = 'valor'
+            Encoded = False
+          end>
         OnReplyEvent = server_eventsEvents0ReplyEvent
       end
       item

@@ -43,6 +43,8 @@ type
     procedure SetDisplayName(const AValue: string); override;
     procedure SetParams(const Value: TRALRESTDWParamsMethods);
 
+    procedure AssignTo(ADest: TPersistent); override;
+
     procedure SetDescription(AValue: TStrings);
     procedure SetBaseURL(const AValue: StringRAL);
   public
@@ -65,8 +67,11 @@ type
     FOnReplyEvent: TRALRESTDWReplyEvent;
     FOnReplyEventByType: TRALRESTDWReplyEventByType;
     FOnBeforeExecute: TNotifyEvent;
+  protected
+    procedure AssignTo(ADest: TPersistent); override;
   public
-    procedure ReplyEvent(ARequest : TRALRequest; AResponse: TRALResponse);
+    procedure ReplyEvent(ARequest : TRALRequest; AResponse: TRALResponse;
+                         AModule: TComponent = nil);
   published
     property OnReplyEvent: TRALRESTDWReplyEvent read FOnReplyEvent write FOnReplyEvent;
     property OnReplyEventByType: TRALRESTDWReplyEventByType read FOnReplyEventByType write FOnReplyEventByType;
@@ -147,7 +152,28 @@ end;
 
 procedure TRALRESTDWEventBase.SetParams(const Value: TRALRESTDWParamsMethods);
 begin
-  FParams := Value;
+  // trocar o ponteiro vazava a colecao antiga e deixava duas donas da nova
+  FParams.Assign(Value);
+end;
+
+procedure TRALRESTDWEventBase.AssignTo(ADest: TPersistent);
+begin
+  if ADest.InheritsFrom(TRALRESTDWEventBase) then
+  begin
+    with ADest as TRALRESTDWEventBase do
+    begin
+      BaseURL := Self.BaseURL;
+      DefaultContentType := Self.DefaultContentType;
+      Description := Self.Description;
+      EventName := Self.EventName;
+      OnlyPreDefinedParams := Self.OnlyPreDefinedParams;
+      Params := Self.Params;
+    end;
+  end
+  else
+  begin
+    inherited AssignTo(ADest);
+  end;
 end;
 
 { TRALRESTDWEventList }
@@ -179,7 +205,23 @@ end;
 
 { TRALRESTDWEventServer }
 
-procedure TRALRESTDWEventServer.ReplyEvent(ARequest: TRALRequest; AResponse: TRALResponse);
+procedure TRALRESTDWEventServer.AssignTo(ADest: TPersistent);
+begin
+  inherited AssignTo(ADest);
+
+  if ADest.InheritsFrom(TRALRESTDWEventServer) then
+  begin
+    with ADest as TRALRESTDWEventServer do
+    begin
+      OnReplyEvent := Self.OnReplyEvent;
+      OnReplyEventByType := Self.OnReplyEventByType;
+      OnBeforeExecute := Self.OnBeforeExecute;
+    end;
+  end;
+end;
+
+procedure TRALRESTDWEventServer.ReplyEvent(ARequest: TRALRequest;
+  AResponse: TRALResponse; AModule: TComponent);
 var
   vParams: TRALRESTDWParams;
   {$IFDEF RDW143}
@@ -204,6 +246,7 @@ begin
     AResponse.ContentType := FDefaultContentType;
 
     FParams.CreateParams(vParams);
+    vParams.Module := AModule;
     vParams.AssignRequest(ARequest);
 
     AResponse.ContentDispositionInline := True;
