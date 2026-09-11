@@ -217,14 +217,18 @@ var
 begin
   Result := nil;
 
-  { a rota do evento nao carrega o Domain do modulo, mas a query da requisicao
-    carrega. RALSameName porque o casamento de rota do proprio RAL ignora a caixa }
+  { A rota do evento nao carrega o Domain do modulo, mas a query da requisicao
+    carrega. A comparacao ignora a caixa porque o casamento de rota do proprio
+    RAL ignora - SameText e nao o RALSameName do RALTools de proposito: aquele e
+    de 2026-09-10 e amarraria este pacote a um PascalRAL das ultimas horas. Aqui
+    roda uma vez por requisicao, sobre um punhado de eventos, entao a conversao
+    que o SameText faz no Delphi nao pesa. }
   vQuery := FixRoute(ARequest.Query);
 
   for vInt1 := 0 to Pred(FEvents.Count) do
   begin
     vEvent := TRALRESTDWEventServer(FEvents.Items[vInt1]);
-    if RALSameName(FixRoute(ADomain + '/' + vEvent.GetRoute), vQuery) and
+    if SameText(FixRoute(ADomain + '/' + vEvent.GetRoute), vQuery) and
        vEvent.Routes.RouteIsActive(ARequest.Method) then
     begin
       Result := vEvent;

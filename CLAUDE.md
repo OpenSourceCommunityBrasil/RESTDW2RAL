@@ -49,6 +49,17 @@ $i = "$ral\base;$ral\languages;$ral\utils;<repo>\src"
 
 Expected noise, all pre-existing: `W1057` implicit string casts by the hundred (PascalRAL's own), one `W1055` on `TRALRESTDWParams` for the `published` block on a plain `TObject`. Anything else is yours.
 
+**Compiling against the sources is not the whole check.** The `../PascalRAL` tree moves daily and the `PascalRAL.bpl` a user has installed can be weeks behind, so a brand-new RAL function compiles here and then refuses to install on their machine. That already happened once: `RALTools.RALSameName` landed 2026-09-10 and the installed package was from 2026-09-01. Build the package itself against the **installed** `.dcp` as well, which is the shape an install actually takes:
+
+```powershell
+$pub = "C:SERSPUBLICDOCUMENTSmbarcaderoStudio.0"   # onde ficam Bpl e Dcp
+& "$bdsindcc32.exe" --no-config -B -Q -NS"..." ``
+  -U"$bdsibwin32elease;$pubDcp;<repo>src" -I"<repo>src" ``
+  -LU"rtl;PascalRALDsgn" -N0"<out>dcu" -LE"<out>" -LN"<out>" RALRESTDW.dpk
+```
+
+It needs `pkg/delphi/RALRESTDW.res`, which the IDE generates and the repo does not track - `brcc32` over a one-line `.rc` produces a usable one. Prefer the oldest API that does the job: this package should install on a PascalRAL that is a few weeks old.
+
 ### End-to-end
 
 `exemplo/delphi/servidor` + `exemplo/delphi/cliente` exercise every feature. For an automated pass, a console harness that drives `TRALRESTDWClientEvents` against the running server covers discovery, typed params, datasets, per-event auth and the failure paths in one run — that is how the current behaviour was validated (19 checks, all green).

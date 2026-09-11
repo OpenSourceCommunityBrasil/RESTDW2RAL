@@ -327,7 +327,7 @@ begin
   Result := False;
   for vInt1 := 0 to Pred(Routes.Count) do
   begin
-    if RALSameName(TRALRoute(Routes.Items[vInt1]).Route, ARoute) then
+    if SameText(TRALRoute(Routes.Items[vInt1]).Route, ARoute) then
     begin
       Result := True;
       Break;
