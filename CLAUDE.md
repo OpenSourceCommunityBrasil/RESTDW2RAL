@@ -60,6 +60,8 @@ $pub = "C:SERSPUBLICDOCUMENTSmbarcaderoStudio.0"   # onde ficam Bpl e Dcp
 
 It needs `pkg/delphi/RALRESTDW.res`, which the IDE generates and the repo does not track - `brcc32` over a one-line `.rc` produces a usable one. Prefer the oldest API that does the job: this package should install on a PascalRAL that is a few weeks old.
 
+**Compile with range checking on at least once.** `dcc32 --no-config` leaves `$R` off, the IDE turns it on for every Debug build, and the difference is not academic: `TRALStringStream` ends every write in `WriteBytes`, which does `Write(ABytes[0], Length(ABytes))` - indexing `[0]` of an empty array. Harmless with the check off, `ERangeError` with it on, and it fires on something as ordinary as a param declared with no `DefaultValue`. Nothing in this repo may hand empty content to those constructors; `StoreText`/`StoreStream` build an empty stream instead. Add `'-$R+'` to the dcc32 line (quoted, or PowerShell eats `$R` as a variable) and run the demos again.
+
 ### End-to-end
 
 `exemplo/delphi/servidor` + `exemplo/delphi/cliente` exercise every feature. For an automated pass, a console harness that drives `TRALRESTDWClientEvents` against the running server covers discovery, typed params, datasets, per-event auth and the failure paths in one run — that is how the current behaviour was validated (19 checks, all green).

@@ -259,10 +259,23 @@ begin
   FreeAndNil(FValue);
 end;
 
+{ Conteudo vazio nao pode passar pelos construtores de TRALStringStream.
+
+  Eles terminam em WriteBytes, que faz Write(ABytes[0], Length(ABytes)): com um
+  array vazio isso indexa a posicao 0 de um array de tamanho 0. Sem range check
+  e inofensivo, porque o Length e zero e nada e lido; com range check ligado - o
+  padrao do Debug no IDE - e um ERangeError. E o caso corriqueiro: todo param
+  declarado sem DefaultValue chega aqui com string vazia. }
 procedure TRALRESTDWJSONParam.StoreText(const AValue: StringRAL);
 begin
   FreeAndNil(FValue);
-  FValue := StringToStreamUTF8(AValue);
+
+  if AValue = '' then
+    FValue := TRALStringStream.Create
+  else
+    FValue := StringToStreamUTF8(AValue);
+
+  FValue.Position := 0;
 end;
 
 procedure TRALRESTDWJSONParam.StoreStream(AStream: TStream);
@@ -272,7 +285,11 @@ begin
     Exit;
 
   AStream.Position := 0;
-  FValue := TRALStringStream.Create(AStream);
+  if AStream.Size = 0 then
+    FValue := TRALStringStream.Create
+  else
+    FValue := TRALStringStream.Create(AStream);
+
   FValue.Position := 0;
 end;
 
