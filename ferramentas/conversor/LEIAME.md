@@ -105,6 +105,38 @@ rdw2ral <pasta ou arquivo> [opções]
 | --- | --- |
 | `.pas` `.dpr` `.lpr` | tira do `uses` toda unit que comece com `uRESTDW` ou `uDW` e põe `RALRESTDWCompat` no lugar (mais a unit da casca e `RALRESTDWClientSQL`, quando o arquivo precisa); troca o tipo do campo do transporte; acrescenta `RegisterClass(TSeuDataModule)` |
 | `.dfm` `.lfm` | renomeia as classes dos componentes; converte o `Routes = [crAll]` do RDW antigo para `Routes.All.Active` |
+| `.lpi` | troca as dependências de pacote do RDW pelas daqui |
+
+### O `.lpi`, no Lazarus
+
+No Delphi as units vêm do *library path* do IDE e o projeto não declara nada. No
+Lazarus é o contrário: as dependências moram no `.lpi`, e sem mexer nelas o projeto
+convertido continua exigindo os pacotes do RDW — que podem nem estar instalados na
+máquina — e não exige os daqui. O resultado é um projeto que não abre.
+
+| pacote do RDW | vira |
+| --- | --- |
+| o que tem `Driver` ou `Link` no nome (`RESTDWLazarusDriver`, `RESTDWNativeLinkSQLDB`, `restdwdriverzeos`, …) | `RALRESTDWDB` |
+| o que tem `Socket` ou `Shell` (`RESTDWIndySockets`, `RestDatawareIndySockets`, `RESTDWShellServices`, …) | o pacote da casca do motor escolhido — hoje `RALRESTDWIndy` |
+| o resto (`RESTDataWareComponents`, `restdatawarecomponents`, `restdwjClientLAMW`, …) | `RALRESTDW` |
+
+O `RALRESTDW` entra sempre que alguma dependência do RDW saiu: é dele que vêm os
+eventos, o cliente e o DataModule. Vale para projeto cliente também — é o pacote do
+motor que registra a engine do RAL dentro do executável, e sem ele o cliente compila
+e não acha engine nenhuma em tempo de execução.
+
+Reconhece as duas gerações pelo começo do nome (`RESTDW…` e `RESTDataWare…`, em
+qualquer caixa), que é o que RDW 1.4 e Phoenix têm em comum, e **mantém o formato do
+arquivo**: o Lazarus escreve a lista de dois jeitos — `<Item>` repetido, ou
+`Count="N"` com `<Item1>…<ItemN>` — e o que entrou nesse formato sai nele, com os
+itens renumerados e o `Count` corrigido. Rodar duas vezes não duplica dependência.
+
+Quando o motor escolhido ainda não tem casca aqui, ou quando o transporte ficou de
+fora (`--sem-transporte`), a dependência de transporte do RDW **fica onde está**, com
+aviso: tirá-la e deixar a classe do RDW no formulário trocaria um projeto que compila
+por um que não compila.
+
+O `.lpk` de um pacote seu não é tocado — só o `.lpi` de projeto.
 
 Renomeações no formulário:
 

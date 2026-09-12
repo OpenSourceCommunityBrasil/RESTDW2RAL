@@ -313,6 +313,46 @@ types renamed, a converted unit still needs nothing but `RALRESTDWCompat` in its
 Names that are *not* RDW-namespaced (`TDataMode`, `TObjectValue`, `TTypeObject`,
 `TObjectDirection`, `TSendEvent`) stay behind `--tipos`: a project may have its own.
 
+**On Lazarus the `.lpi` has to be converted too, or nothing else matters.** Delphi takes
+its units from the IDE's library path and the project declares nothing; Lazarus keeps the
+package dependencies inside the project file, so a converted project still requires the
+RDW packages - possibly not installed on the machine that receives it - and requires none
+of ours. It does not compile, and it does not even open. `ConverterLPI` rewrites only what
+sits between `<RequiredPackages>` and `</RequiredPackages>`, in bytes and line by line:
+anything with `Driver` or `Link` in the name becomes `RALRESTDWDB`, anything with `Socket`
+or `Shell` becomes the chosen engine's shell package (`PacoteCasca`, today only
+`RALRESTDWIndy`), everything else becomes `RALRESTDW` - which is added whenever any RDW
+package left, since the events, the client and the DataModule all live there. The client
+side needs the engine package just as much as the server: it is what registers the RAL
+engine in the executable. Three details are not optional:
+
+- **Both generations are recognised by prefix** (`RESTDW…`, `RESTDataWare…`, any case).
+  Phoenix alone ships seventeen package names and 1.4 spells its own differently
+  (`RESTDWLazDriver`, `RestDatawareIndySockets`, `restdatawarecomponents`), so a closed
+  list would go stale on the next RDW release.
+- **Both file formats must survive.** Lazarus writes the list either as repeated `<Item>`
+  or, older, as `Count="N"` with `<Item1>…<ItemN>`, and it picks how to *read* by whether
+  that `Count` attribute exists (`TXMLConfig.IsLegacyList`). Converting one into the other
+  would make an older IDE read zero packages, so the file keeps the shape it came with,
+  with the items renumbered and the `Count` rewritten.
+- **When the transport has no shell here** - an engine other than Indy, or
+  `--sem-transporte` - the RDW transport package **stays**, with a warning. Removing it
+  while its class is still in the `.lfm` would trade a project that compiles for one that
+  does not.
+
+A `uses` item can arrive with a directive glued to it: the Lazarus `FullServer` demo has
+an `ENDIF` stuck to `uRESTDWDataUtils` in the implementation clause. `PartirItemUses`
+splits the directives off both ends so the name can be recognised; the unit goes and **the
+directives stay**, carried onto the next item that survives, or onto the end of the last
+one. Dropping an `ENDIF` along with its unit leaves the `IFDEF` above it unterminated.
+
+What a Lazarus project still cannot do is reach its database: only `TRESTDWFireDACDriver`
+has a shell, so `TRESTDWLazarusDriver`, `TRESTDWZeosDriver` and the ten other driver
+components are reported by name in `cSemEquivalente` and left alone. The base class
+(`TRALRESTDWDriverBase`) is already driver-agnostic - it reads the connection's `Params`
+by RTTI - so the shells are cheap to add; what they need is a native Lazarus server to be
+tested against.
+
 ## Traps
 
 - **A lone body param travels without its name.** PascalRAL's `EncodeBody` skips multipart when there is exactly one body param and sends the raw value; the name arrives as `ral_body`. This bit both directions — `getevents` sends only `servereventname` when `AccessTag` is empty, and a handler returning just text answers with only `cUndefined`. Both sides now read in two steps (by name, then `Body`). Its own `CLAUDE.md` says not to "fix" this in RAL, so any new param that can travel alone needs the same two-step read.

@@ -57,6 +57,9 @@ type
     Pacote: string;    // IndyRAL, o .bpl do motor que o Delphi registra
     Rotulo: string;    // o que aparece na janela
     TemCasca: Boolean; // False enquanto a casca daquele motor nao existir
+    { O pacote deste projeto que traz a casca daquele motor, como o .lpi de um
+      projeto Lazarus precisa declarar. Vazio quando a casca nao existe. }
+    PacoteCasca: string;
   end;
 
   TServidoresRAL = array of TServidorRAL;
@@ -109,6 +112,11 @@ type
     procedure ReescreverBloco(ALinhas, ASaida: TStringList; var AIdx: Integer;
                               const AArquivo, ANome, AClasseOrig, AClasseNova,
                               AMapa: string; var AQtd: Integer);
+    { Qual pacote deste projeto entra no lugar de um do RDW }
+    function PacoteEquivalente(const APacoteRDW: string): string;
+    { O projeto do Lazarus: e no .lpi que moram as dependencias de pacote }
+    function ConverterLPI(const ATexto: RawByteString; const AArquivo: string;
+                          var AQtd: Integer): RawByteString;
     function ConverterDFM(const ATexto: RawByteString; const AArquivo: string;
                           out AQtd: Integer): RawByteString;
     function ConverterPAS(const ATexto: RawByteString; const AArquivo: string;
@@ -191,10 +199,29 @@ const
      Nota: 'o pooler do RDW virou um TRALClient')
   );
 
-  { Componentes do RDW sem equivalente: o conversor nao mexe, so avisa }
-  cSemEquivalente: array[0..1] of string = (
+  { Componentes do RDW sem equivalente: o conversor nao mexe, so avisa.
+
+    Os drivers de banco: destes so o FireDAC tem casca aqui. Os outros ficam
+    com o nome do RDW no formulario e no .pas, e o projeto para de compilar
+    nesse ponto - avisar e o unico jeito de quem migra saber por que, em vez de
+    receber um "Identifier not found" solto. Os de Lazarus (LazarusDriver,
+    LazSQLDriver, ZeosDriver) sao os que mais aparecem, porque e o que as demos
+    de Lazarus do RDW usam. }
+  cSemEquivalente: array[0..13] of string = (
     'TRESTDWMassiveBuffer',
-    'TRESTDWUpdateSQL'
+    'TRESTDWUpdateSQL',
+    'TRESTDWLazarusDriver',
+    'TRESTDWLazSQLDriver',
+    'TRESTDWZeosDriver',
+    'TRESTDWNativeDriver',
+    'TRESTDWUniDACDriver',
+    'TRESTDWIBDACDriver',
+    'TRESTDWMyDACDriver',
+    'TRESTDWADODriver',
+    'TRESTDWAnyDACDriver',
+    'TRESTDWApolloDBDriver',
+    'TRESTDWDBExpressDriver',
+    'TRESTDWInterbaseDriver'
   );
 
   { Eventos que so existiam no TServerMethodDataModule e nao tem equivalente.
@@ -637,6 +664,122 @@ begin
   Result := SameText(Trim(AValor), 'True');
 end;
 
+{ Separa as diretivas coladas nas pontas de um item do uses do nome da unit.
+
+  Elas vem coladas mesmo: a demo FullServer do RDW tem um ENDIF grudado no
+  uRESTDWDataUtils, no uses da implementacao. Sem separar, o nome nao comeca
+  por uRESTDW e a unit do RDW fica no arquivo. Separadas, a unit sai e a
+  diretiva fica - tirar um ENDIF junto com a unit deixaria o IFDEF de cima sem
+  fechamento, e ai nao compila mais nada.
+
+  (as diretivas estao escritas sem as chaves neste comentario de proposito: o
+  compilador le a de dentro do comentario e fecha o comentario nela) }
+procedure PartirItemUses(const AItem: string; out APrefixo, ANome,
+  ASufixo: string);
+var
+  vPos: Integer;
+begin
+  ANome := Trim(AItem);
+  APrefixo := '';
+  ASufixo := '';
+
+  while StartsText('{$', ANome) do
+  begin
+    vPos := Pos('}', ANome);
+    if vPos = 0 then
+      Break;
+    APrefixo := APrefixo + Copy(ANome, 1, vPos);
+    ANome := TrimLeft(Copy(ANome, vPos + 1, MaxInt));
+  end;
+
+  while EndsText('}', ANome) do
+  begin
+    vPos := LastDelimiter('{', ANome);
+    if (vPos = 0) or (Copy(ANome, vPos, 2) <> '{$') then
+      Break;
+    ASufixo := Copy(ANome, vPos, MaxInt) + ASufixo;
+    ANome := TrimRight(Copy(ANome, 1, vPos - 1));
+  end;
+end;
+
+{ De quem e o pacote. Prefixo em vez de lista fechada: sao dezessete so no
+  Phoenix, o 1.4 batiza os dele de outro jeito - RESTDWLazDriver,
+  RestDatawareIndySockets, restdatawarecomponents - e as duas geracoes passam
+  por aqui. O que identifica e o comeco do nome, em qualquer caixa. }
+function PacoteEhRDW(const ANome: string): Boolean;
+begin
+  Result := StartsText('RESTDW', ANome) or StartsText('RESTDataWare', ANome);
+end;
+
+{ O valor de um Value="..." da linha. Devolve string porque nome de pacote e
+  ASCII; o resto da linha continua intocado, em bytes. }
+function ValorDaTag(const ALinha: RawByteString): string;
+var
+  vTexto: string;
+  vIni, vFim: Integer;
+begin
+  Result := '';
+  vTexto := string(ALinha);
+
+  vIni := Pos('value="', LowerCase(vTexto));
+  if vIni = 0 then
+    Exit;
+
+  Inc(vIni, Length('value="'));
+  vFim := vIni;
+  while (vFim <= Length(vTexto)) and (vTexto[vFim] <> '"') do
+    Inc(vFim);
+
+  Result := Copy(vTexto, vIni, vFim - vIni);
+end;
+
+/// Os brancos com que a linha comeca, para o que entrar sair alinhado
+function RecuoDaLinha(const ALinha: RawByteString): RawByteString;
+var
+  vInt1: Integer;
+begin
+  vInt1 := 1;
+  while (vInt1 <= Length(ALinha)) and (ALinha[vInt1] in [' ', #9]) do
+    Inc(vInt1);
+  Result := Copy(ALinha, 1, vInt1 - 1);
+end;
+
+/// A quebra que a linha traz, para o arquivo continuar no fim de linha dele
+function QuebraDaLinha(const ALinha: RawByteString): RawByteString;
+var
+  vLen: Integer;
+begin
+  Result := #13#10;
+  vLen := Length(ALinha);
+  if (vLen >= 1) and (ALinha[vLen] = #10) and
+     ((vLen < 2) or (ALinha[vLen - 1] <> #13)) then
+    Result := #10;
+end;
+
+{ Troca o numero do Count="N" e deixa o resto da linha como esta. E por esse
+  atributo que o Lazarus decide como ler a lista: com ele le Item1..ItemN, sem
+  ele conta os <Item>. }
+function TrocarCount(const ALinha: RawByteString; AValor: Integer): RawByteString;
+var
+  vTexto: string;
+  vIni, vFim: Integer;
+begin
+  Result := ALinha;
+  vTexto := string(ALinha);
+
+  vIni := Pos('count="', LowerCase(vTexto));
+  if vIni = 0 then
+    Exit;
+
+  Inc(vIni, Length('count="'));
+  vFim := vIni;
+  while (vFim <= Length(vTexto)) and (vTexto[vFim] <> '"') do
+    Inc(vFim);
+
+  Result := RawByteString(Copy(vTexto, 1, vIni - 1) + IntToStr(AValor) +
+                          Copy(vTexto, vFim, MaxInt));
+end;
+
 { TConversor }
 
 constructor TConversor.Create;
@@ -658,6 +801,9 @@ begin
   Result[0].Pacote := 'IndyRAL';
   Result[0].Rotulo := 'Indy';
   Result[0].TemCasca := True;
+  Result[0].PacoteCasca := 'RALRESTDWIndy';
+  { os demais ficam com PacoteCasca vazio: enquanto nao ha casca, nao ha
+    pacote deste projeto para entrar no lugar do pacote de transporte do RDW }
 
   Result[1].Classe := 'TRALRESTDWSynopseServicePooler';
   Result[1].UnitName := 'RALRESTDWSynopsePooler';
@@ -818,7 +964,7 @@ end;
 class function TConversor.ExtensaoAceita(const AArquivo: string): Boolean;
 begin
   Result := MatchText(LowerCase(ExtractFileExt(AArquivo)),
-                      ['.pas', '.dpr', '.lpr', '.dfm', '.lfm']);
+                      ['.pas', '.dpr', '.lpr', '.dfm', '.lfm', '.lpi']);
 end;
 
 procedure TConversor.Avisar(const AArquivo, ATexto: string; ATipo: TTipoAviso);
@@ -1192,6 +1338,223 @@ begin
   end;
 end;
 
+{ Qual pacote deste projeto entra no lugar do que saiu:
+
+    driver ou link  -> a metade de banco
+    socket ou shell -> o transporte, que depende do motor escolhido. Vale para
+                       projeto cliente tambem: e o pacote do motor que registra
+                       a engine do RAL dentro do executavel, e sem ele o
+                       cliente compila e nao acha engine nenhuma em tempo de
+                       execucao
+    o resto         -> o pacote base, com eventos, cliente e DataModule
+
+  O jClient do LAMW cai no base de proposito: e cliente, e o cliente mora la. }
+function TConversor.PacoteEquivalente(const APacoteRDW: string): string;
+var
+  vServidores: TServidoresRAL;
+  vInt1: Integer;
+begin
+  if ContainsText(APacoteRDW, 'Driver') or ContainsText(APacoteRDW, 'Link') then
+    Exit('RALRESTDWDB');
+
+  if not (ContainsText(APacoteRDW, 'Socket') or
+          ContainsText(APacoteRDW, 'Shell')) then
+    Exit('RALRESTDW');
+
+  { o transporte so tem substituto quando o motor escolhido tem casca aqui -
+    e quando a conversao do transporte esta ligada, senao a classe do RDW
+    continua no formulario e o pacote dela ainda faz falta }
+  Result := '';
+  if not FConverterTransporte then
+    Exit;
+
+  vServidores := ServidoresRAL;
+  for vInt1 := Low(vServidores) to High(vServidores) do
+    if SameText(vServidores[vInt1].Classe, FServidorRAL) then
+      Exit(vServidores[vInt1].PacoteCasca);
+end;
+
+{ O .lpi e o projeto do Lazarus, e e nele que moram as dependencias de pacote.
+
+  Trocar o uses dos fontes nao basta ali: o projeto continua exigindo os
+  pacotes do RDW - que podem nem estar instalados na maquina de quem recebe -
+  e nao exige os daqui, entao o Lazarus nao acha as units e o projeto nem abre.
+  No Delphi isso nao aparece, porque la as units vem do library path do IDE e
+  nao de uma dependencia declarada dentro do projeto.
+
+  Mexe so entre <RequiredPackages> e </RequiredPackages>, linha a linha e em
+  bytes: o IDE grava uma tag por linha, e passar o arquivo inteiro por string
+  estragaria acento de titulo ou de autor.
+
+  Sao dois formatos e os dois aparecem nas demos do RDW: o novo repete <Item>,
+  e o antigo traz Count="N" com <Item1>..<ItemN>. O Lazarus escolhe como ler
+  pela presenca do Count, entao o que sai daqui mantem o formato que entrou -
+  renumerando os itens e corrigindo o Count quando for o antigo. }
+function TConversor.ConverterLPI(const ATexto: RawByteString;
+  const AArquivo: string; var AQtd: Integer): RawByteString;
+var
+  vPos, vFim, vLinhaIni, vIniBloco, vFimBloco, vInt1, vIndice: Integer;
+  vLinha, vEOL, vAbertura, vCorpo, vItem, vRecuo, vTag: RawByteString;
+  vPacote, vNovo, vMotivo: string;
+  vNovos: TStringList;
+  vNoItem, vLegado: Boolean;
+begin
+  Result := ATexto;
+  if not Contem(ATexto, '<RequiredPackages') then
+    Exit;
+
+  vNovos := TStringList.Create;
+  try
+    vNovos.Sorted := True;
+    vNovos.Duplicates := dupIgnore;
+
+    vAbertura := '';
+    vCorpo := '';
+    vItem := '';
+    vRecuo := '      ';
+    vEOL := #13#10;
+    vPacote := '';
+    vIniBloco := 0;
+    vFimBloco := 0;
+    vIndice := 0;
+    vNoItem := False;
+    vLegado := False;
+
+    vPos := 1;
+    while vPos <= Length(ATexto) do
+    begin
+      { a linha sai inteira, com a quebra que tiver - assim um arquivo em LF
+        continua em LF e a ultima linha sem quebra continua sem }
+      vLinhaIni := vPos;
+      vFim := vPos;
+      while (vFim <= Length(ATexto)) and (ATexto[vFim] <> #10) do
+        Inc(vFim);
+      if vFim <= Length(ATexto) then
+        Inc(vFim);
+
+      vLinha := Copy(ATexto, vPos, vFim - vPos);
+      vPos := vFim;
+
+      // fora do bloco so interessa achar onde ele comeca
+      if vIniBloco = 0 then
+      begin
+        if Contem(vLinha, '<RequiredPackages') then
+        begin
+          vIniBloco := vLinhaIni;
+          vAbertura := vLinha;
+          vEOL := QuebraDaLinha(vLinha);
+          vLegado := Contem(vLinha, 'Count="');
+        end;
+        Continue;
+      end;
+
+      { o fim do bloco encerra a leitura: o resto do arquivo sai inteiro do
+        texto original, sem passar por aqui }
+      if Contem(vLinha, '</RequiredPackages>') then
+      begin
+        vFimBloco := vLinhaIni;
+        Break;
+      end;
+
+      if not vNoItem then
+      begin
+        if not Contem(vLinha, '<Item') then
+        begin
+          // linha solta dentro do bloco: sai como entrou, na mesma ordem
+          vCorpo := vCorpo + vLinha;
+          Continue;
+        end;
+
+        vNoItem := True;
+        vItem := '';
+        vPacote := '';
+        // o recuo do arquivo, para o que entrar sair igual ao que ja esta
+        vRecuo := RecuoDaLinha(vLinha);
+        Continue;
+      end;
+
+      { as linhas de dentro do item ficam guardadas ate ele fechar, porque so
+        no fim se sabe se o item era do RDW }
+      if not Contem(vLinha, '</Item') then
+      begin
+        vItem := vItem + vLinha;
+        if Contem(vLinha, '<PackageName') then
+          vPacote := ValorDaTag(vLinha);
+        Continue;
+      end;
+
+      vNoItem := False;
+
+      if PacoteEhRDW(vPacote) then
+      begin
+        vNovo := PacoteEquivalente(vPacote);
+        if vNovo <> '' then
+        begin
+          vNovos.Add(vNovo);
+          Avisar(AArquivo, Format('dependencia de pacote %s -> %s',
+                 [vPacote, vNovo]), taRenomeado);
+          Inc(AQtd);
+          Continue; // o item do RDW nao vai para a saida
+        end;
+
+        { o transporte nao foi convertido: tirar o pacote e deixar a classe do
+          RDW no formulario seria trocar um projeto que compila por um que nao
+          compila - fica como esta, com aviso }
+        if FConverterTransporte then
+          vMotivo := 'o motor escolhido ainda nao tem casca neste projeto'
+        else
+          vMotivo := 'o transporte ficou de fora desta conversao';
+        Avisar(AArquivo, Format('dependencia de pacote %s mantida: %s',
+               [vPacote, vMotivo]), taSemEquivalente);
+      end;
+
+      Inc(vIndice);
+      vTag := 'Item';
+      if vLegado then
+        vTag := vTag + RawByteString(IntToStr(vIndice));
+      vCorpo := vCorpo + vRecuo + '<' + vTag + '>' + vEOL + vItem +
+                         vRecuo + '</' + vTag + '>' + vEOL;
+    end;
+
+    { nada a fazer, ou algo que nao se entendeu: o arquivo volta intocado.
+      vNoItem aberto quer dizer item sem fechamento, e reescrever um bloco que
+      nao se leu inteiro seria perder o que sobrou dele }
+    if (vFimBloco = 0) or vNoItem or (vNovos.Count = 0) then
+      Exit;
+
+    { o base entra sempre que algo do RDW saiu: e dele que vem os eventos, o
+      cliente e o DataModule }
+    vNovos.Add('RALRESTDW');
+
+    for vInt1 := 0 to vNovos.Count - 1 do
+    begin
+      // ja declarado: converter duas vezes nao duplica a dependencia
+      if Contem(ATexto, RawByteString('Value="' + vNovos[vInt1] + '"')) then
+        Continue;
+
+      Inc(vIndice);
+      vTag := 'Item';
+      if vLegado then
+        vTag := vTag + RawByteString(IntToStr(vIndice));
+      vCorpo := vCorpo + vRecuo + '<' + vTag + '>' + vEOL +
+                         vRecuo + '  <PackageName Value="' +
+                         RawByteString(vNovos[vInt1]) + '"/>' + vEOL +
+                         vRecuo + '</' + vTag + '>' + vEOL;
+      Avisar(AArquivo, Format('dependencia de pacote %s adicionada',
+             [vNovos[vInt1]]), taInjetado);
+      Inc(AQtd);
+    end;
+
+    if vLegado then
+      vAbertura := TrocarCount(vAbertura, vIndice);
+
+    Result := Copy(ATexto, 1, vIniBloco - 1) + vAbertura + vCorpo +
+              Copy(ATexto, vFimBloco, MaxInt);
+  finally
+    FreeAndNil(vNovos);
+  end;
+end;
+
 function TConversor.ConverterDFM(const ATexto: RawByteString;
   const AArquivo: string; out AQtd: Integer): RawByteString;
 var
@@ -1412,6 +1775,7 @@ function TConversor.AjustarUses(const ATexto: RawByteString;
   out AQtd: Integer): RawByteString;
 var
   vBaixo, vItem, vNomeUnit, vBloco, vNovo: string;
+  vPrefixo, vSufixo, vPendente: string;
   vPosUses, vPosFim, vInicio, vInt1: Integer;
   vItens, vSaida: TStringList;
   vRemoveu, vPrecisaCompat, vPrecisaSQL, vPrecisaDB, vPrecisaPooler: Boolean;
@@ -1472,12 +1836,20 @@ begin
         StringReplace(vBloco, #13, '', [rfReplaceAll]), #10, '', [rfReplaceAll]);
 
       vRemoveu := False;
+      vPendente := '';
 
       for vInt1 := 0 to vItens.Count - 1 do
       begin
-        vItem := Trim(vItens[vInt1]);
-        if vItem = '' then
+        PartirItemUses(vItens[vInt1], vPrefixo, vItem, vSufixo);
+        if (vItem = '') and (vPrefixo = '') and (vSufixo = '') then
           Continue;
+
+        // item so de diretiva: ela vale para o proximo que ficar
+        if vItem = '' then
+        begin
+          vPendente := vPendente + vPrefixo + vSufixo;
+          Continue;
+        end;
 
         vNomeUnit := vItem;
         if Pos(' in ', LowerCase(vNomeUnit)) > 0 then
@@ -1486,13 +1858,22 @@ begin
         if StartsText('uRESTDW', vNomeUnit) or StartsText('uDW', vNomeUnit) then
         begin
           vRemoveu := True;
+          // a unit sai, as diretivas dela ficam
+          vPendente := vPendente + vPrefixo + vSufixo;
           Avisar(AArquivo, Format('unit do RDW removida do uses: %s', [vNomeUnit]),
                  taUnitRemovida);
           Continue;
         end;
 
-        vSaida.Add(vItem);
+        vSaida.Add(vPendente + vPrefixo + vItem + vSufixo);
+        vPendente := '';
       end;
+
+      { a diretiva que sobrou do ultimo item removido gruda no fim do que
+        ficou. Se nao ficou nada ela some junto: o que abre e o que fecha
+        estavam os dois dentro da clausula, entao o par sai inteiro }
+      if (vPendente <> '') and (vSaida.Count > 0) then
+        vSaida[vSaida.Count - 1] := vSaida[vSaida.Count - 1] + vPendente;
 
       { Uma clausula que ficou sem nenhuma unit nao e Pascal valido, e nao e
         so teoria: a demo FullClient do RDW ja vem com um 'uses;' vazio, que
@@ -1596,6 +1977,8 @@ begin
     vTexto := ConverterDFM(vTexto, AArquivo, vQtd)
   else if MatchText(vExt, ['.pas', '.dpr', '.lpr']) then
     vTexto := ConverterPAS(vTexto, AArquivo, vQtd)
+  else if vExt = '.lpi' then
+    vTexto := ConverterLPI(vTexto, AArquivo, vQtd)
   else
     Exit;
 
