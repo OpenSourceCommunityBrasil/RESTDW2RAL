@@ -254,7 +254,7 @@ object fPrincipal: TfPrincipal
     Font.Style = [fsBold]
     Lines.Strings = (
       'select * from '
-      'IMAGELIST')
+      'PACIENTES')
     ParentFont = False
     TabOrder = 2
   end

@@ -59,6 +59,12 @@ Duas alterações além da limpeza, ambas comentadas no fonte:
   próprios valores que a demo traz (`IMAGELIST` no comando, `PACIENTES` no campo) o
   `FindField` devolve `Nil` e o Execute terminava em violação de acesso, no RDW igual.
   Ganhou o mesmo teste de `Nil` que o `btnOpenClick` já fazia com `FULL_NAME` e `UF`.
+- Ainda no `FullClient`, o comando que vem no memo passou de `select * from IMAGELIST`
+  para `select * from PACIENTES`. Eram a grid de uma tabela e o *UpdateTableName* de
+  outra: o **ApplyUpdates** montava o update contra `PACIENTES` com as colunas da
+  `IMAGELIST` e o Firebird recusava por coluna inexistente — de fábrica, a demo não
+  conseguia gravar o que era editado na grid. Nada mais mudou; o campo
+  *UpdateTableName* continua editável, e é ele que manda.
 
 ## O `.fdb` das demos não serve num Firebird novo
 

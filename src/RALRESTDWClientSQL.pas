@@ -122,6 +122,8 @@ type
       resposta chega - entao e aqui que os params do master tem de estar
       prontos, e nao no OpenCursor, que so roda depois dos dados. }
     procedure SetActive(AValue: boolean); override;
+    { Comeco de requisicao: nao ha resposta, e o erro da anterior nao vale mais. }
+    procedure IniciarRequisicao;
     { Segura a chamada ate a resposta chegar.
 
       O RAL manda as operacoes de banco com callback e ExecBehavior padrao
@@ -734,7 +736,7 @@ end;
 
 procedure TRALRESTDWClientSQL.ExecSQL;
 begin
-  FResponseDone := False;
+  IniciarRequisicao;
   inherited ExecSQL;
 
   { Destes tres, so o Open e assincrono: o RAL despacha ExecSQL e ApplyUpdates
@@ -778,7 +780,7 @@ begin
     if (not Active) or (FPendentes = 0) then
       Exit;
 
-    FResponseDone := False;
+    IniciarRequisicao;
     inherited ApplyUpdates;
 
     { sincrono no RAL, como o ExecSQL - ver o comentario la }
@@ -823,12 +825,27 @@ begin
 
   FWaiting := True;
   try
-    FResponseDone := False;
+    IniciarRequisicao;
     inherited SetActive(AValue);
     WaitResponse(True);
   finally
     FWaiting := False;
   end;
+end;
+
+{ O erro da requisicao anterior morre aqui, e nao no comeco da espera.
+
+  Zerar no WaitResponse perdia a mensagem: o RAL despacha ExecSQL e
+  ApplyUpdates com ebSingleThread, entao o callback - e com ele o
+  InternalError, que guarda a mensagem - ja rodou dentro do inherited, antes
+  de a espera comecar. O que o servidor recusava voltava como sucesso: a demo
+  FullClient abre IMAGELIST com UpdateTableName apontando para PACIENTES, o
+  update ia para a tabela errada, o Firebird reclamava da coluna e o
+  ApplyUpdates devolvia True com erro vazio - nada gravado e nada dito. }
+procedure TRALRESTDWClientSQL.IniciarRequisicao;
+begin
+  FResponseDone := False;
+  FLastError := '';
 end;
 
 function TRALRESTDWClientSQL.WaitResponse(AUntilActive: boolean): boolean;
@@ -840,8 +857,6 @@ begin
   Result := False;
   vLimite := IncMilliSecond(Now, FRequestTimeout);
   vPrincipal := MainThreadID = TThread.CurrentThread.ThreadID;
-
-  FLastError := '';
 
   while Now < vLimite do
   begin
