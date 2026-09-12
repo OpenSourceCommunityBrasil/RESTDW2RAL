@@ -8,15 +8,8 @@ unit RALRESTDWDB;
 interface
 
 uses
-  RALRESTDWClientSQL, RALRESTDWDatabase, RALRESTDWPoolerDB, RALRESTDWDBReg, LazarusPackageIntf;
+  RALRESTDWClientSQL, RALRESTDWDatabase, RALRESTDWPoolerDB;
 
 implementation
 
-procedure Register;
-begin
-  RegisterUnit('RALRESTDWDBReg', @RALRESTDWDBReg.Register);
-end;
-
-initialization
-  RegisterPackage('RALRESTDWDB', @Register);
 end.

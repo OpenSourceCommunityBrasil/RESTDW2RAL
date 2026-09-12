@@ -8,19 +8,11 @@ unit RALRESTDW;
 interface
 
 uses
-  RALRESTDWReg, RALRESTDWModule, RALRESTDWParams, RALRESTDWParamsMethods, 
+  RALRESTDWModule, RALRESTDWParams, RALRESTDWParamsMethods, 
   RALRESTDWServerEvents, RALRESTDWTypes, RALRESTDWClientEvents, 
-  RALRESTDWEvents, RALRESTDWCompat, RALRESTDWOptions, RALRESTDWDataModule,
-  RALRESTDWClient, RALRESTDWMassive, RALRESTDWServerContext,
-  LazarusPackageIntf;
+  RALRESTDWEvents, RALRESTDWCompat, RALRESTDWOptions, RALRESTDWDataModule, 
+  RALRESTDWClient, RALRESTDWMassive, RALRESTDWServerContext;
 
 implementation
 
-procedure Register;
-begin
-  RegisterUnit('RALRESTDWReg', @RALRESTDWReg.Register);
-end;
-
-initialization
-  RegisterPackage('RALRESTDW', @Register);
 end.

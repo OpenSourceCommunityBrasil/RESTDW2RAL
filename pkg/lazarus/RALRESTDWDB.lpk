@@ -3,7 +3,7 @@
   <Package Version="5">
     <PathDelim Value="\"/>
     <Name Value="RALRESTDWDB"/>
-    <Type Value="RunAndDesignTime"/>
+    <Type Value="RunTime"/>
     <Description Value="RESTDW2RAL - dataset remoto no formato do TRESTDWClientSQL"/>
     <CompilerOptions>
       <Version Value="11"/>
@@ -30,11 +30,6 @@
       <Item>
         <Filename Value="..\..\src\RALRESTDWPoolerDB.pas"/>
         <UnitName Value="RALRESTDWPoolerDB"/>
-      </Item>
-      <Item>
-        <Filename Value="..\..\src\RALRESTDWDBReg.pas"/>
-        <HasRegisterProc Value="True"/>
-        <UnitName Value="RALRESTDWDBReg"/>
       </Item>
     </Files>
     <RequiredPkgs>

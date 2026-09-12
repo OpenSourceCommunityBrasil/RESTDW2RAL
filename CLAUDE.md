@@ -58,7 +58,8 @@ msbuild pkg\delphi\RALRESTDW.dproj     /t:Build /p:Config=Release /p:Platform=Wi
 msbuild pkg\delphi\RALRESTDWDB.dproj   ... /p:DCC_UsePackage="rtl;RALRESTDW;RALDBFireDACLink"
 msbuild pkg\delphi\RALRESTDWIndy.dproj ... /p:DCC_UsePackage="rtl;RALRESTDW;IndyRAL"
 
-lazbuild --build-all pkg\lazarus\RALRESTDW.lpk      # same for DB and Indy
+# on Lazarus, installing means rebuilding the IDE, and only the design package installs
+lazbuild --add-package --build-ide= pkg\lazarus\RALRESTDWDsgn.lpk
 ```
 
 Four things about that command line, each of which has already cost an afternoon:
@@ -283,6 +284,14 @@ silent failure:
    resulting `Params` across. Reading the params once at setup is not enough and looks
    right until you try it.
 
+**A dataset of ours is born with a storage link.** RAL leaves `Storage` nil, and the server only
+answers in the driver's native format when both sides run the same driver - Delphi talking to
+Delphi. A client on the other compiler takes the storage branch, and with no link there it used to
+crash the server; with the nil check upstream it now gets an error instead, which is no better for
+whoever migrated. `TRALRESTDWClientSQL` assigns a `TRALStorageBINLink` in its constructor, which is
+the format RAL itself uses for datasets and changes nothing where the native path is available -
+that branch never looks at the link. This is what makes an FPC client work against a Delphi server.
+
 **`ChangeCount` is not the pending count.** RAL leaves FireDAC's `CachedUpdates` off and
 keeps pending statements in a private `TRALDBSQLCache`, so `ChangeCount` is always 0 and
 the cache is unreachable from a descendant. `TRALRESTDWClientSQL` counts them itself in
@@ -307,7 +316,7 @@ Names that are *not* RDW-namespaced (`TDataMode`, `TObjectValue`, `TTypeObject`,
 ## Traps
 
 - **A lone body param travels without its name.** PascalRAL's `EncodeBody` skips multipart when there is exactly one body param and sends the raw value; the name arrives as `ral_body`. This bit both directions — `getevents` sends only `servereventname` when `AccessTag` is empty, and a handler returning just text answers with only `cUndefined`. Both sides now read in two steps (by name, then `Body`). Its own `CLAUDE.md` says not to "fix" this in RAL, so any new param that can travel alone needs the same two-step read.
-- **PascalRAL faults under `$R+` on any query with a parameter.** `RALDBSQLCache.GetQueryParams` (`src/database/RALDBSQLCache.pas`, line 308) does `vParam.Size := GetInt64Prop(vColetItem, 'Size')` - reading an `Integer` property as `Int64`. Range checking turns the truncation into `ERangeError`, and the IDE turns range checking on for every Debug build. Confirmed by map lookup, with a param whose `Size` is 0 and `DataType` is `ftInteger`; setting `Size` by hand does not help, because the bad read happens inside RAL. **There is no client-side workaround** - it has to be fixed there (`GetOrdProp`). The events half is unaffected. Until then the DB demos need range checking off.
+- **The database half needs a PascalRAL from 2026-09-12 or later.** Five defects in RAL's own database code stood between a migrated project and a working query, and all five are fixed upstream now: `GetQueryParams` read `TParam.Size` with `GetInt64Prop` and killed **any query with a parameter** under `$R+` (which the IDE turns on for every Debug build); `TRALDBModule.OpenSQLResponse` used the client's storage link without a nil check and **took the server down** when the client sent none; `CreateStorage` asked a nil class for its `ClassName` while reporting that very problem; the four storage formats let a read-only field - `count(*)`, a computed column - refuse its assignment and lose the whole row; and FPC's `TRALDBBufDataset` kept the fields of the previous statement when the SQL changed. On an older RAL the symptoms come back exactly as described, and none of them has a workaround on this side.
 - **Only `Open` is asynchronous.** `TRALDBConnection` posts `ExecSQL` and `ApplyUpdates`
   with `ebSingleThread`, so their callback has already run when `inherited` returns;
   only `OpenRemote` is threaded. Waiting for those two through `CheckSynchronize` meant

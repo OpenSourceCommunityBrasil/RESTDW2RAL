@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="\"/>
+    <Name Value="RALRESTDWDsgn"/>
+    <Type Value="DesignTime"/>
+    <Description Value="RESTDW2RAL - o registro na paleta e os editores de componente e de propriedade. Separado dos pacotes de runtime porque as units de registro usam LResources, PropEdits e ComponentEditors: num pacote RunAndDesignTime elas entram em todo projeto que usa os componentes, e um servidor de console em FPC nao linka - pede os WSRegister do widgetset da LCL. E a mesma separacao que o PascalRAL faz entre pascalral e pascalraldsgn."/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <PathDelim Value="\"/>
+      <SearchPaths>
+        <OtherUnitFiles Value="..\..\src"/>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+      <Linking>
+        <Debugging>
+          <DebugInfoType Value="dsDwarf3"/>
+        </Debugging>
+      </Linking>
+    </CompilerOptions>
+    <Files>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWReg.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="RALRESTDWReg"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWDBReg.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="RALRESTDWDBReg"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\src\RALRESTDWIndyReg.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="RALRESTDWIndyReg"/>
+      </Item>
+    </Files>
+    <RequiredPkgs>
+      <Item>
+        <PackageName Value="RALRESTDWIndy"/>
+      </Item>
+      <Item>
+        <PackageName Value="RALRESTDWDB"/>
+      </Item>
+      <Item>
+        <PackageName Value="RALRESTDW"/>
+      </Item>
+      <Item>
+        <PackageName Value="IDEIntf"/>
+      </Item>
+      <Item>
+        <PackageName Value="pascalraldsgn"/>
+      </Item>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>

@@ -3,7 +3,7 @@
   <Package Version="5">
     <PathDelim Value="\"/>
     <Name Value="RALRESTDWIndy"/>
-    <Type Value="RunAndDesignTime"/>
+    <Type Value="RunTime"/>
     <Description Value="RESTDW2RAL - o service pooler do RDW sobre o motor Indy do PascalRAL. Separado porque arrasta o Indy: um projeto que so e cliente, ou que roda noutro motor, nao tem por que carrega-lo."/>
     <CompilerOptions>
       <Version Value="11"/>
@@ -22,11 +22,6 @@
       <Item>
         <Filename Value="..\..\src\RALRESTDWIndyPooler.pas"/>
         <UnitName Value="RALRESTDWIndyPooler"/>
-      </Item>
-      <Item>
-        <Filename Value="..\..\src\RALRESTDWIndyReg.pas"/>
-        <HasRegisterProc Value="True"/>
-        <UnitName Value="RALRESTDWIndyReg"/>
       </Item>
     </Files>
     <RequiredPkgs>

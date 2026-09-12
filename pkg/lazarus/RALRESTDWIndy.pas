@@ -8,15 +8,8 @@ unit RALRESTDWIndy;
 interface
 
 uses
-  RALRESTDWIndyPooler, RALRESTDWIndyReg, LazarusPackageIntf;
+  RALRESTDWIndyPooler;
 
 implementation
 
-procedure Register;
-begin
-  RegisterUnit('RALRESTDWIndyReg', @RALRESTDWIndyReg.Register);
-end;
-
-initialization
-  RegisterPackage('RALRESTDWIndy', @Register);
 end.

@@ -3,7 +3,7 @@
   <Package Version="5">
     <PathDelim Value="\"/>
     <Name Value="RALRESTDW"/>
-    <Type Value="RunAndDesignTime"/>
+    <Type Value="RunTime"/>
     <CompilerOptions>
       <Version Value="11"/>
       <PathDelim Value="\"/>
@@ -18,11 +18,6 @@
       </Linking>
     </CompilerOptions>
     <Files>
-      <Item>
-        <Filename Value="..\..\src\RALRESTDWReg.pas"/>
-        <HasRegisterProc Value="True"/>
-        <UnitName Value="RALRESTDWReg"/>
-      </Item>
       <Item>
         <Filename Value="..\..\src\RALRESTDWModule.pas"/>
         <UnitName Value="RALRESTDWModule"/>
@@ -78,7 +73,7 @@
     </Files>
     <RequiredPkgs>
       <Item>
-        <PackageName Value="pascalraldsgn"/>
+        <PackageName Value="PascalRAL"/>
       </Item>
       <Item>
         <PackageName Value="FCL"/>

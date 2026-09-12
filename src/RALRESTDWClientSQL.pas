@@ -16,7 +16,7 @@ interface
 uses
   Classes, SysUtils, DateUtils, DB,
   RALTypes, RALDBTypes, RALDBConnection, RALJson, RALRESTDWTypes,
-  RALRESTDWMassive,
+  RALRESTDWMassive, RALStorage, RALStorageBIN,
   {$IFDEF FPC}
     RALDBBufDataset;
   {$ELSE}
@@ -294,6 +294,18 @@ begin
   FSortCaseSens := scYes;
   FAutoSortOnOpen := True;
   FBinaryRequest := True;
+  { Nascer com um storage, que o RAL deixa nulo.
+
+    O servidor so usa o formato nativo do banco quando os dois lados rodam o
+    mesmo driver - Delphi falando com Delphi. Um cliente FPC contra um servidor
+    Delphi cai no outro ramo do TRALDBModule.OpenSQLResponse, que usa o link de
+    storage sem testar nil: o cliente que nao manda um **derruba o servidor**
+    com violacao de acesso, e quem migrou ve o servidor inteiro cair por causa
+    de um select. Medido nos dois sentidos.
+
+    O BIN e o formato que o proprio RAL usa para dataset, e atribui-lo nao muda
+    nada onde o nativo e possivel: aquele ramo nem olha o link. }
+  Storage := TRALStorageBINLink.Create(Self);
   FDatapacks := -1;
   FMassiveType := mtMassiveCache;
   FPendentes := 0;
