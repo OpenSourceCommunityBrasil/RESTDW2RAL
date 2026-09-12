@@ -1,0 +1,181 @@
+object fprincipal: Tfprincipal
+  Left = 300
+  Height = 560
+  Top = 180
+  Width = 860
+  Caption = 'RESTDW2RAL - conversor de projetos REST Dataware'
+  ClientHeight = 560
+  ClientWidth = 860
+  Constraints.MinHeight = 420
+  Constraints.MinWidth = 700
+  OnCreate = FormCreate
+  OnDropFiles = FormDropFiles
+  Position = poScreenCenter
+  object pnTopo: TPanel
+    Left = 0
+    Height = 112
+    Top = 0
+    Width = 860
+    Align = alTop
+    BevelOuter = bvNone
+    ClientHeight = 112
+    ClientWidth = 860
+    TabOrder = 0
+    object lbPasta: TLabel
+      Left = 12
+      Height = 15
+      Top = 12
+      Width = 240
+      Caption = 'Pasta do projeto (ou arraste uma para a janela)'
+      ParentColor = False
+    end
+    object edPasta: TEdit
+      Left = 12
+      Height = 23
+      Top = 32
+      Width = 700
+      Anchors = [akTop, akLeft, akRight]
+      OnChange = edPastaChange
+      TabOrder = 0
+    end
+    object btEscolher: TButton
+      Left = 722
+      Height = 25
+      Top = 31
+      Width = 120
+      Anchors = [akTop, akRight]
+      Caption = 'Escolher pasta...'
+      OnClick = btEscolherClick
+      TabOrder = 1
+    end
+    object chkBackup: TCheckBox
+      Left = 12
+      Height = 19
+      Top = 70
+      Width = 140
+      Caption = 'Guardar .bak'
+      Checked = True
+      State = cbChecked
+      TabOrder = 2
+    end
+    object chkTipos: TCheckBox
+      Left = 160
+      Height = 19
+      Top = 70
+      Width = 220
+      Caption = 'Trocar tambem os tipos genericos'
+      TabOrder = 3
+    end
+    object lbServidor: TLabel
+      Left = 396
+      Height = 15
+      Top = 71
+      Width = 84
+      Caption = 'Motor do RAL:'
+      ParentColor = False
+    end
+    object cbServidor: TComboBox
+      Left = 486
+      Height = 23
+      Top = 67
+      Width = 226
+      ItemHeight = 15
+      Style = csDropDownList
+      TabOrder = 4
+    end
+    object btSimular: TButton
+      Left = 722
+      Height = 25
+      Top = 66
+      Width = 58
+      Anchors = [akTop, akRight]
+      Caption = '1. Simular'
+      OnClick = btSimularClick
+      TabOrder = 5
+    end
+    object btAplicar: TButton
+      Left = 786
+      Height = 25
+      Top = 66
+      Width = 56
+      Anchors = [akTop, akRight]
+      Caption = '2. Aplicar'
+      OnClick = btAplicarClick
+      TabOrder = 6
+    end
+  end
+  object lbArquivos: TLabel
+    Left = 0
+    Height = 15
+    Top = 112
+    Width = 860
+    Align = alTop
+    BorderSpacing.Left = 12
+    Caption = 'Arquivos que mudam (duplo clique abre a pasta)'
+    ParentColor = False
+  end
+  object lvArquivos: TListView
+    Left = 0
+    Height = 208
+    Top = 127
+    Width = 860
+    Align = alClient
+    Columns = <
+      item
+        Caption = 'Arquivo'
+        Width = 260
+      end
+      item
+        Alignment = taRightJustify
+        Caption = 'Alteracoes'
+        Width = 90
+      end
+      item
+        Caption = 'Pasta'
+        Width = 480
+      end>
+    ReadOnly = True
+    RowSelect = True
+    TabOrder = 1
+    ViewStyle = vsReport
+    OnDblClick = lvArquivosDblClick
+  end
+  object spl: TSplitter
+    Cursor = crVSplit
+    Left = 0
+    Height = 5
+    Top = 335
+    Width = 860
+    Align = alBottom
+    ResizeAnchor = akBottom
+  end
+  object lbAvisos: TLabel
+    Left = 0
+    Height = 15
+    Top = 340
+    Width = 860
+    Align = alBottom
+    BorderSpacing.Left = 12
+    Caption = 'Avisos - cada linha marcada com [ATENCAO] precisa de decisao sua'
+    ParentColor = False
+  end
+  object mAvisos: TMemo
+    Left = 0
+    Height = 182
+    Top = 355
+    Width = 860
+    Align = alBottom
+    ReadOnly = True
+    ScrollBars = ssAutoBoth
+    TabOrder = 2
+    WordWrap = False
+  end
+  object sb: TStatusBar
+    Left = 0
+    Height = 23
+    Top = 537
+    Width = 860
+    Panels = <>
+    SimplePanel = True
+  end
+end

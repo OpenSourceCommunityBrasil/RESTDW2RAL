@@ -21,7 +21,11 @@ unit uConversor;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.StrUtils, System.IOUtils;
+  {$IFDEF FPC}
+    SysUtils, Classes, StrUtils;
+  {$ELSE}
+    System.SysUtils, System.Classes, System.StrUtils;
+  {$ENDIF}
 
 type
   { A forma do handler de evento: o RDW 2.x entrega o resultado num TStringList
@@ -44,6 +48,9 @@ type
     projeto, que publica a cara do pooler do RDW e faz o de/para por dentro.
     Por isso ha uma casca por motor: o TRALServer e abstrato, quem implementa
     o transporte e a classe filha. }
+  { Os motores que o conversor sabe gerar. Tipo com nome em vez de TArray<T>:
+    o FPC 3.2 nao tem generico em modo objfpc, e o motor tem de compilar nos
+    dois compiladores - a janela do Lazarus usa esta mesma unit. }
   TServidorRAL = record
     Classe: string;    // TRALRESTDWIndyServicePooler, a casca
     UnitName: string;  // RALRESTDWIndyPooler
@@ -51,6 +58,8 @@ type
     Rotulo: string;    // o que aparece na janela
     TemCasca: Boolean; // False enquanto a casca daquele motor nao existir
   end;
+
+  TServidoresRAL = array of TServidorRAL;
 
   { TConversor }
 
@@ -113,7 +122,7 @@ type
     procedure Executar(const ACaminho: string);
     class function ExtensaoAceita(const AArquivo: string): Boolean;
     /// Os servidores do RAL que o conversor sabe gerar
-    class function ServidoresRAL: TArray<TServidorRAL>;
+    class function ServidoresRAL: TServidoresRAL;
     /// Os que estao instalados nesta maquina, na frente da lista
     class procedure ServidoresInstalados(ALista: TStrings);
     /// A unit que declara a classe de servidor escolhida
@@ -142,8 +151,10 @@ type
 
 implementation
 
+{$IFNDEF FPC}
 uses
   System.Win.Registry, Winapi.Windows;
+{$ENDIF}
 
 type
   TTroca = record
@@ -271,6 +282,87 @@ const
   );
 
   cRegBDS = 'SOFTWARE\Embarcadero\BDS';
+
+{ Os utilitarios de arquivo daqui para baixo eram System.IOUtils, que so o
+  Delphi tem. Escritos a mao, o motor compila nos dois compiladores - e e o
+  motor que precisa ser unico, porque e nele que mora toda a regra da
+  conversao. Nenhum deles converte texto: um .pas de projeto RDW e ANSI da
+  pagina de codigo da maquina e o conversor so procura identificadores ASCII,
+  entao os bytes passam inteiros e voltam inteiros. }
+
+function LerBytes(const AArquivo: string): TBytes;
+var
+  vStream: TFileStream;
+begin
+  vStream := TFileStream.Create(AArquivo, fmOpenRead or fmShareDenyWrite);
+  try
+    SetLength(Result, vStream.Size);
+    if vStream.Size > 0 then
+      vStream.ReadBuffer(Result[0], vStream.Size);
+  finally
+    FreeAndNil(vStream);
+  end;
+end;
+
+function LerTextoAnsi(const AArquivo: string): string;
+var
+  vBytes: TBytes;
+  vAnsi: RawByteString;
+begin
+  vBytes := LerBytes(AArquivo);
+  SetLength(vAnsi, Length(vBytes));
+  if Length(vBytes) > 0 then
+    Move(vBytes[0], vAnsi[1], Length(vBytes));
+  Result := string(vAnsi);
+end;
+
+procedure CopiarArquivo(const AOrigem, ADestino: string);
+var
+  vEntrada, vSaida: TFileStream;
+begin
+  vEntrada := TFileStream.Create(AOrigem, fmOpenRead or fmShareDenyWrite);
+  try
+    vSaida := TFileStream.Create(ADestino, fmCreate);
+    try
+      if vEntrada.Size > 0 then
+        vSaida.CopyFrom(vEntrada, vEntrada.Size);
+    finally
+      FreeAndNil(vSaida);
+    end;
+  finally
+    FreeAndNil(vEntrada);
+  end;
+end;
+
+{ Todos os arquivos da pasta e das que estao dentro dela. }
+procedure ListarArquivos(const APasta: string; ALista: TStrings);
+var
+  vBusca: TSearchRec;
+  vDir: string;
+begin
+  vDir := IncludeTrailingPathDelimiter(APasta);
+  if FindFirst(vDir + '*', faAnyFile, vBusca) <> 0 then
+    Exit;
+  try
+    repeat
+      if (vBusca.Name = '.') or (vBusca.Name = '..') then
+        Continue;
+
+      if (vBusca.Attr and faDirectory) <> 0 then
+        ListarArquivos(vDir + vBusca.Name, ALista)
+      else
+        ALista.Add(vDir + vBusca.Name);
+    until FindNext(vBusca) <> 0;
+  finally
+    { qualificado de proposito: no Delphi o Winapi.Windows entra depois da RTL
+      no uses e leva o FindClose dele, que recebe um handle e nao o TSearchRec }
+    {$IFDEF FPC}
+      SysUtils.FindClose(vBusca);
+    {$ELSE}
+      System.SysUtils.FindClose(vBusca);
+    {$ENDIF}
+  end;
+end;
 
 function EhIdentChar(AByte: Byte): Boolean;
 begin
@@ -558,7 +650,7 @@ begin
   FClasseModulo := '';
 end;
 
-class function TConversor.ServidoresRAL: TArray<TServidorRAL>;
+class function TConversor.ServidoresRAL: TServidoresRAL;
 begin
   SetLength(Result, 4);
   Result[0].Classe := 'TRALRESTDWIndyServicePooler';
@@ -589,19 +681,46 @@ end;
 { Le os pacotes que o Delphi tem registrados e devolve os servidores do RAL:
   primeiro os instalados, depois o resto marcado como tal. Assim quem migra
   escolhe de uma lista que corresponde a maquina dele, e nao a um catalogo. }
-class procedure TConversor.ServidoresInstalados(ALista: TStrings);
+{ Os pacotes que o IDE tem instalados, para o conversor dizer quais motores
+  quem migra ja tem a mao. A pergunta e a mesma nos dois lados; a fonte e que
+  muda: no Delphi e o registro, e no Lazarus e o staticpackages.inc da
+  configuracao do usuario, que lista o que foi de fato instalado no IDE. }
+procedure PacotesDoIDE(ALista: TStrings);
+{$IFDEF FPC}
+var
+  vArquivo, vLinha: string;
+  vTexto: TStringList;
+  vInt1: Integer;
+begin
+  vArquivo := IncludeTrailingPathDelimiter(GetEnvironmentVariable('LOCALAPPDATA')) +
+              'lazarus' + PathDelim + 'staticpackages.inc';
+  if not FileExists(vArquivo) then
+    Exit;
+
+  vTexto := TStringList.Create;
+  try
+    vTexto.LoadFromFile(vArquivo);
+    for vInt1 := 0 to vTexto.Count - 1 do
+    begin
+      // cada linha e "nomedopacote,"; as de comentario comecam com //
+      vLinha := Trim(vTexto[vInt1]);
+      if (vLinha = '') or (Copy(vLinha, 1, 2) = '//') then
+        Continue;
+
+      vLinha := Trim(StringReplace(vLinha, ',', '', [rfReplaceAll]));
+      if vLinha <> '' then
+        ALista.Add(vLinha);
+    end;
+  finally
+    FreeAndNil(vTexto);
+  end;
+end;
+{$ELSE}
 var
   vReg: TRegistry;
-  vVersoes, vPacotes, vDaVersao: TStringList;
-  vServidores: TArray<TServidorRAL>;
-  vInt1, vInt2, vTopo: Integer;
-  vInstalado: Boolean;
-  vNome: string;
+  vVersoes, vDaVersao: TStringList;
+  vInt1: Integer;
 begin
-  ALista.Clear;
-  vServidores := ServidoresRAL;
-
-  vPacotes := TStringList.Create;
   vVersoes := TStringList.Create;
   vDaVersao := TStringList.Create;
   vReg := TRegistry.Create(KEY_READ);
@@ -622,7 +741,7 @@ begin
       try
         // GetValueNames limpa a lista que recebe: acumular numa segunda
         vReg.GetValueNames(vDaVersao);
-        vPacotes.AddStrings(vDaVersao);
+        ALista.AddStrings(vDaVersao);
       finally
         vReg.CloseKey;
       end;
@@ -632,6 +751,22 @@ begin
     FreeAndNil(vDaVersao);
     FreeAndNil(vVersoes);
   end;
+end;
+{$ENDIF}
+
+class procedure TConversor.ServidoresInstalados(ALista: TStrings);
+var
+  vPacotes: TStringList;
+  vServidores: TServidoresRAL;
+  vInt1, vInt2, vTopo: Integer;
+  vInstalado: Boolean;
+  vNome: string;
+begin
+  ALista.Clear;
+  vServidores := ServidoresRAL;
+
+  vPacotes := TStringList.Create;
+  PacotesDoIDE(vPacotes);
 
   vTopo := 0;
   try
@@ -670,7 +805,7 @@ end;
 
 class function TConversor.UnitDoServidor(const AClasse: string): string;
 var
-  vServidores: TArray<TServidorRAL>;
+  vServidores: TServidoresRAL;
   vInt1: Integer;
 begin
   Result := '';
@@ -697,16 +832,22 @@ end;
 procedure TConversor.DescobrirClasseModulo(const ACaminho: string);
 var
   vArquivo, vTexto, vLinha, vClasse: string;
-  vLinhas: TStringList;
-  vInt1, vPos: Integer;
+  vLinhas, vArquivos: TStringList;
+  vInt1, vInt2, vPos: Integer;
 begin
-  if (FClasseModulo <> '') or (not TDirectory.Exists(ACaminho)) then
+  if (FClasseModulo <> '') or (not DirectoryExists(ACaminho)) then
     Exit;
 
-  for vArquivo in TDirectory.GetFiles(ACaminho, '*.pas',
-                                      TSearchOption.soAllDirectories) do
-  begin
-    vTexto := TFile.ReadAllText(vArquivo, TEncoding.ANSI);
+  vArquivos := TStringList.Create;
+  try
+    ListarArquivos(ACaminho, vArquivos);
+    for vInt2 := 0 to vArquivos.Count - 1 do
+    begin
+    vArquivo := vArquivos[vInt2];
+    if not SameText(ExtractFileExt(vArquivo), '.pas') then
+      Continue;
+
+    vTexto := LerTextoAnsi(vArquivo);
     if not ContainsText(vTexto, 'TRESTDWServerEvents') then
       Continue;
 
@@ -726,12 +867,16 @@ begin
         else if (vClasse <> '') and ContainsText(vLinha, ': TRESTDWServerEvents;') then
         begin
           FClasseModulo := vClasse;
+          { o finally de fora ainda roda: nada vaza ao sair daqui }
           Exit;
         end;
       end;
     finally
       FreeAndNil(vLinhas);
     end;
+    end;
+  finally
+    FreeAndNil(vArquivos);
   end;
 end;
 
@@ -942,9 +1087,9 @@ begin
     FParArquivo := AArquivoDFM;
     FParTexto := '';
     vPas := ChangeFileExt(AArquivoDFM, '.pas');
-    if TFile.Exists(vPas) then
+    if FileExists(vPas) then
     begin
-      vBytes := TFile.ReadAllBytes(vPas);
+      vBytes := LerBytes(vPas);
       if Length(vBytes) > 0 then
       begin
         SetLength(vTexto, Length(vBytes));
@@ -1435,7 +1580,7 @@ begin
   Inc(FLidos);
   vExt := LowerCase(ExtractFileExt(AArquivo));
 
-  vBytes := TFile.ReadAllBytes(AArquivo);
+  vBytes := LerBytes(AArquivo);
   SetLength(vTexto, Length(vBytes));
   if Length(vBytes) > 0 then
     Move(vBytes[0], vTexto[1], Length(vBytes));
@@ -1467,7 +1612,7 @@ begin
     Exit;
 
   if FBackup then
-    TFile.Copy(AArquivo, AArquivo + '.bak', True);
+    CopiarArquivo(AArquivo, AArquivo + '.bak');
 
   vStream := TFileStream.Create(AArquivo, fmCreate);
   try
@@ -1480,7 +1625,9 @@ end;
 
 procedure TConversor.Executar(const ACaminho: string);
 var
-  vArquivo, vCaminho: string;
+  vCaminho: string;
+  vArquivos: TStringList;
+  vInt1: Integer;
 begin
   FLidos := 0;
   FAlterados := 0;
@@ -1490,23 +1637,28 @@ begin
   if vCaminho = '' then
     raise Exception.Create('Informe a pasta ou o arquivo a converter');
 
-  if TFile.Exists(vCaminho) then
+  if FileExists(vCaminho) then
   begin
     DescobrirClasseModulo(ExtractFilePath(vCaminho));
     Converter(vCaminho);
     Exit;
   end;
 
-  if not TDirectory.Exists(vCaminho) then
+  if not DirectoryExists(vCaminho) then
     raise Exception.CreateFmt('Caminho nao encontrado: %s', [vCaminho]);
 
   // duas passadas: a classe do DataModule precisa ser conhecida antes do DFM
   DescobrirClasseModulo(vCaminho);
 
-  for vArquivo in TDirectory.GetFiles(vCaminho, '*.*',
-                                      TSearchOption.soAllDirectories) do
-    if ExtensaoAceita(vArquivo) then
-      Converter(vArquivo);
+  vArquivos := TStringList.Create;
+  try
+    ListarArquivos(vCaminho, vArquivos);
+    for vInt1 := 0 to vArquivos.Count - 1 do
+      if ExtensaoAceita(vArquivos[vInt1]) then
+        Converter(vArquivos[vInt1]);
+  finally
+    FreeAndNil(vArquivos);
+  end;
 end;
 
 end.

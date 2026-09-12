@@ -520,8 +520,10 @@ callback, para que o seu `try..except` em volta do `Open` funcione.
 
 ## Conversor de projetos
 
-`ferramentas/conversor` faz o trabalho mecânico. Tem **janela**
-(`ferramentas/conversor/gui`) e linha de comando, as duas sobre o mesmo motor:
+`ferramentas/conversor` faz o trabalho mecânico. Tem **janela no Delphi**
+(`ferramentas/conversor/gui`), **janela no Lazarus**
+(`ferramentas/conversor/gui-lazarus`) e linha de comando, as três sobre o mesmo
+motor:
 
 ```
 rdw2ral <pasta>                        # simula e mostra o relatório
@@ -530,8 +532,9 @@ rdw2ral --servidores                   # os motores do RAL desta máquina
 ```
 
 Na janela: escolhe a pasta, **escolhe o motor do RAL**, clica em Simular, vê o que
-mudaria, e só então aplica. A lista de motores sai do registro do Delphi, com os que
-você tem instalados na frente — não é um catálogo fixo.
+mudaria, e só então aplica. A lista de motores sai do próprio IDE — o registro do
+Delphi ou a configuração do Lazarus —, com os que você tem instalados na frente:
+não é um catálogo fixo.
 
 O que ele faz é pouco, de propósito, porque as cascas fazem o resto:
 

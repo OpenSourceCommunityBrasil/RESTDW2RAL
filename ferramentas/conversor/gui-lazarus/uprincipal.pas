@@ -1,44 +1,52 @@
-{ Conversor de projetos REST Dataware para RESTDW2RAL - versao com janela.
+{ Conversor de projetos REST Dataware para RESTDW2RAL - a janela do Lazarus.
 
-  Toda a regra esta em uConversor, a mesma unit que a linha de comando usa.
-  Aqui so ha a tela. }
+  Toda a regra esta em uConversor, a mesma unit que a linha de comando e a
+  janela do Delphi usam: sao tres cascas sobre um motor so, para nao divergirem
+  com o tempo. Aqui so ha tela.
+
+  O que muda em relacao a janela do Delphi e o que a LCL faz diferente:
+  arrastar pasta e uma propriedade do formulario em vez de uma mensagem do
+  Windows, a caixa de escolher pasta ja e a nativa, e abrir a pasta de um
+  arquivo e OpenDocument em vez de ShellExecute. }
 unit uprincipal;
+
+{$mode delphi}{$H+}
 
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, Winapi.ShellAPI,
-  System.SysUtils, System.Variants, System.Classes, System.IOUtils, System.StrUtils,
-  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls,
-  Vcl.ComCtrls, Vcl.ExtCtrls, Vcl.FileCtrl,
+  SysUtils, Classes, StrUtils, Forms, Controls, StdCtrls, ComCtrls, ExtCtrls,
+  Dialogs, LCLIntf,
   uConversor;
 
 type
+
+  { Tfprincipal }
+
   Tfprincipal = class(TForm)
-    pnTopo: TPanel;
-    pnCima: TPanel;
-    pnBaixo: TPanel;
-    lbPasta: TLabel;
-    edPasta: TEdit;
+    btAplicar: TButton;
     btEscolher: TButton;
+    btSimular: TButton;
+    cbServidor: TComboBox;
     chkBackup: TCheckBox;
     chkTipos: TCheckBox;
-    lbServidor: TLabel;
-    cbServidor: TComboBox;
-    btSimular: TButton;
-    btAplicar: TButton;
-    lvArquivos: TListView;
-    mAvisos: TMemo;
-    sb: TStatusBar;
-    spl: TSplitter;
+    edPasta: TEdit;
     lbArquivos: TLabel;
     lbAvisos: TLabel;
-    procedure FormCreate(Sender: TObject);
+    lbPasta: TLabel;
+    lbServidor: TLabel;
+    lvArquivos: TListView;
+    mAvisos: TMemo;
+    pnTopo: TPanel;
+    sb: TStatusBar;
+    spl: TSplitter;
+    procedure btAplicarClick(Sender: TObject);
     procedure btEscolherClick(Sender: TObject);
     procedure btSimularClick(Sender: TObject);
-    procedure btAplicarClick(Sender: TObject);
-    procedure lvArquivosDblClick(Sender: TObject);
     procedure edPastaChange(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FormDropFiles(Sender: TObject; const FileNames: array of string);
+    procedure lvArquivosDblClick(Sender: TObject);
   private
     FConv: TConversor;
     FRaiz: string;
@@ -52,8 +60,6 @@ type
     /// A casca correspondente ao motor escolhido; vazio se nao houver
     function ClasseEscolhida: string;
     procedure AtualizarBotoes;
-    /// Aceita uma pasta arrastada para dentro da janela
-    procedure WMDropFiles(var AMsg: TWMDropFiles); message WM_DROPFILES;
   public
     destructor Destroy; override;
   end;
@@ -63,46 +69,41 @@ var
 
 implementation
 
-{$R *.dfm}
+{$R *.lfm}
 
 destructor Tfprincipal.Destroy;
 begin
   FreeAndNil(FConv);
-  inherited;
+  inherited Destroy;
 end;
 
 procedure Tfprincipal.FormCreate(Sender: TObject);
 begin
   FConv := TConversor.Create;
-  DragAcceptFiles(Handle, True);
+  { na LCL arrastar arquivo para dentro da janela e uma propriedade, nao uma
+    mensagem do Windows: o Delphi precisa de DragAcceptFiles e WM_DROPFILES }
+  AllowDropFiles := True;
 
   CarregarServidores;
-
   sb.SimpleText := '  Escolha a pasta do projeto e clique em Simular. ' +
                    'Nada e gravado ate voce mandar aplicar.';
 
   // a pasta tambem pode vir na linha de comando
   if (ParamCount >= 1) and
-     (TDirectory.Exists(ParamStr(1)) or TFile.Exists(ParamStr(1))) then
+     (DirectoryExists(ParamStr(1)) or FileExists(ParamStr(1))) then
     edPasta.Text := ParamStr(1);
 
   AtualizarBotoes;
 end;
 
-procedure Tfprincipal.WMDropFiles(var AMsg: TWMDropFiles);
-var
-  vBuf: array[0..MAX_PATH] of Char;
+procedure Tfprincipal.FormDropFiles(Sender: TObject;
+  const FileNames: array of string);
 begin
-  try
-    if DragQueryFile(AMsg.Drop, 0, vBuf, MAX_PATH) > 0 then
-    begin
-      edPasta.Text := vBuf;
-      Limpar;
-    end;
-  finally
-    DragFinish(AMsg.Drop);
-  end;
-  AMsg.Result := 0;
+  if Length(FileNames) = 0 then
+    Exit;
+
+  edPasta.Text := FileNames[0];
+  Limpar;
 end;
 
 procedure Tfprincipal.edPastaChange(Sender: TObject);
@@ -120,47 +121,31 @@ begin
   btAplicar.Enabled := vTem and (lvArquivos.Items.Count > 0);
 end;
 
-{ A caixa de escolher pasta e a mesma de abrir arquivo, com fdoPickFolders: da
-  para digitar o caminho, colar, usar os atalhos da lateral e a barra de
-  endereco. A antiga era a arvore do SelectDirectory, onde achar uma pasta
-  funda e um exercicio de paciencia.
-
-  O TFileOpenDialog e do Vista para cima; em Windows mais velho ele levanta na
-  criacao, e ai vale a arvore de antes. }
 procedure Tfprincipal.btEscolherClick(Sender: TObject);
 var
-  vDir: string;
-  vDlg: TFileOpenDialog;
+  vDlg: TSelectDirectoryDialog;
 begin
-  vDir := edPasta.Text;
+  vDlg := TSelectDirectoryDialog.Create(nil);
+  try
+    vDlg.Title := 'Pasta do projeto a converter';
+    { a caixa nativa do Windows, que tem barra de endereco, atalhos da lateral
+      e campo para digitar ou colar o caminho - nao a arvore antiga }
+    vDlg.Options := vDlg.Options + [ofPathMustExist, ofEnableSizing];
+    if DirectoryExists(edPasta.Text) then
+      vDlg.InitialDir := edPasta.Text;
 
-  if Win32MajorVersion >= 6 then
-  begin
-    vDlg := TFileOpenDialog.Create(nil);
-    try
-      vDlg.Title := 'Pasta do projeto a converter';
-      vDlg.Options := [fdoPickFolders, fdoPathMustExist, fdoForceFileSystem];
-      vDlg.OkButtonLabel := 'Usar esta pasta';
-      if DirectoryExists(vDir) then
-        vDlg.DefaultFolder := vDir;
+    if not vDlg.Execute then
+      Exit;
 
-      if not vDlg.Execute(Handle) then
-        Exit;
-
-      vDir := vDlg.FileName;
-    finally
-      vDlg.Free;
-    end;
-  end
-  else if not SelectDirectory('Pasta do projeto a converter', '', vDir) then
-    Exit;
-
-  edPasta.Text := vDir;
-  Limpar;
+    edPasta.Text := vDlg.FileName;
+    Limpar;
+  finally
+    FreeAndNil(vDlg);
+  end;
 end;
 
-{ A lista sai do registro do Delphi, e nao de um catalogo fixo: quem migra ve
-  os motores que tem instalados na frente, e os outros marcados. }
+{ A lista sai do proprio IDE, e nao de um catalogo fixo: quem migra ve os
+  motores que tem instalados na frente, e os outros marcados. }
 procedure Tfprincipal.CarregarServidores;
 var
   vLista: TStringList;
@@ -185,7 +170,7 @@ begin
   if cbServidor.ItemIndex < 0 then
     Exit;
 
-  vIdx := NativeInt(cbServidor.Items.Objects[cbServidor.ItemIndex]);
+  vIdx := PtrInt(cbServidor.Items.Objects[cbServidor.ItemIndex]);
   vServidores := TConversor.ServidoresRAL;
   if (vIdx >= 0) and (vIdx <= High(vServidores)) and
      vServidores[vIdx].TemCasca then
@@ -219,8 +204,8 @@ end;
 procedure Tfprincipal.AoAviso(const AArquivo, ATexto: string; ATipo: TTipoAviso);
 const
   cMarca: array[TTipoAviso] of string = ('[uses]    ', '[nome]    ',
-                                        '[portado] ', '[perdido] ',
-                                        '[modulo]  ', '[ATENCAO] ');
+                                         '[portado] ', '[perdido] ',
+                                         '[modulo]  ', '[ATENCAO] ');
 begin
   mAvisos.Lines.Add(Format('%s%s: %s',
                            [cMarca[ATipo], ExtractFileName(AArquivo), ATexto]));
@@ -231,10 +216,8 @@ begin
   if (lvArquivos.Selected = nil) or (lvArquivos.Selected.SubItems.Count < 3) then
     Exit;
 
-  // abre o Explorer ja com o arquivo selecionado
-  ShellExecute(Handle, 'open', 'explorer.exe',
-               PChar('/select,"' + lvArquivos.Selected.SubItems[2] + '"'),
-               nil, SW_SHOWNORMAL);
+  // abre a pasta onde o arquivo esta
+  OpenDocument(ExtractFilePath(lvArquivos.Selected.SubItems[2]));
 end;
 
 procedure Tfprincipal.Rodar(AAplicar: Boolean);
@@ -246,7 +229,7 @@ begin
 
   FRaiz := IncludeTrailingPathDelimiter(ExtractFilePath(
              IncludeTrailingPathDelimiter(Trim(edPasta.Text))));
-  if TFile.Exists(Trim(edPasta.Text)) then
+  if FileExists(Trim(edPasta.Text)) then
     FRaiz := ExtractFilePath(Trim(edPasta.Text));
 
   FConv.Aplicar := AAplicar;
@@ -264,7 +247,7 @@ begin
   FConv.OnAviso := AoAviso;
 
   Screen.Cursor := crHourGlass;
-  lvArquivos.Items.BeginUpdate;
+  lvArquivos.BeginUpdate;
   try
     try
       FConv.Executar(edPasta.Text);
@@ -277,7 +260,7 @@ begin
       end;
     end;
   finally
-    lvArquivos.Items.EndUpdate;
+    lvArquivos.EndUpdate;
     Screen.Cursor := crDefault;
   end;
 
@@ -315,8 +298,8 @@ var
 begin
   vMsg := Format('Gravar as alteracoes em %d arquivo(s)?', [lvArquivos.Items.Count]);
   if not chkBackup.Checked then
-    vMsg := vMsg + sLineBreak + sLineBreak +
-            'Sem copia de seguranca: o original sera sobrescrito.' + sLineBreak +
+    vMsg := vMsg + LineEnding + LineEnding +
+            'Sem copia de seguranca: o original sera sobrescrito.' + LineEnding +
             'Se o projeto nao estiver num controle de versao, marque "Guardar .bak".';
 
   if MessageDlg(vMsg, mtConfirmation, [mbYes, mbNo], 0) <> mrYes then

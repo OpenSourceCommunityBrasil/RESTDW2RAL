@@ -9,22 +9,34 @@ propriedade do seu formulário é alterada ou descartada: `ServicePort`, `RootPa
 `CORS_CustomHeaders`, `AuthenticationOptions`, `CriptOptions` continuam lá, com o mesmo
 nome, e viram configuração do RAL em tempo de execução.
 
-Vem em duas formas, **com a mesma regra por baixo**: `uConversor.pas` tem todo o
-motor, e os dois programas são só a casca. Mexeu na regra, mexeu para os dois.
+Vem em três formas, **com a mesma regra por baixo**: `uConversor.pas` tem todo o
+motor, e os três programas são só a casca. Mexeu na regra, mexeu para os três.
 
 | | |
 | --- | --- |
-| `gui/rdw2ralgui.dpr` | **janela** — escolha a pasta, simule, veja o que muda, aplique |
+| `gui/rdw2ralgui.dpr` | **janela do Delphi** — escolha a pasta, simule, veja o que muda, aplique |
+| `gui-lazarus/rdw2ralgui.lpi` | **a mesma janela no Lazarus**, em LCL |
 | `rdw2ral.dpr` | linha de comando, para script e automação |
+
+O motor compila nos dois compiladores. Por isso ele não usa `System.IOUtils` nem
+genérico: os utilitários de arquivo no começo da implementação fazem esse papel. O
+único trecho que muda de um lado para o outro é o `PacotesDoIDE`, que responde
+*quais motores do RAL você tem instalados* — no Delphi lendo o registro, no Lazarus
+lendo o `staticpackages.inc` da configuração do usuário.
 
 ## Compilar
 
 Nenhuma dependência além da RTL e da VCL:
 
 ```
-dcc32 gui\rdw2ralgui.dpr      # a janela
-dcc32 rdw2ral.dpr             # o console
+dcc32 gui\rdw2ralgui.dpr                      # a janela do Delphi
+dcc32 rdw2ral.dpr                             # o console
+lazbuild gui-lazarus\rdw2ralgui.lpi       # a janela do Lazarus
 ```
+
+A janela do Lazarus não tem diretiva de recurso de propósito: o `lazbuild` não gera
+o `.res` do projeto - só o IDE -, e com ela um checkout limpo não compilaria pela
+linha de comando.
 
 Abrir o `.dpr` no Delphi e compilar é mais simples, porque a IDE gera o `.res` do
 projeto sozinha. Pela linha de comando o `.res` da janela não existe — é saída de
