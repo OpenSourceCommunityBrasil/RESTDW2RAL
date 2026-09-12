@@ -13,6 +13,12 @@ rdw2ral demos\SimpleServer --aplicar --backup   grava, guardando o original como
 Pela janela: abra `rdw2ralgui.exe`, arraste a pasta da demo, escolha o motor do RAL,
 **1. Simular** e depois **2. Aplicar**.
 
+O `FullServer` e o `FullClient` so fazem sentido juntos, entao ha um grupo de projetos
+para os dois: converta as duas pastas e abra `FullServerClient.groupproj` — a IDE abre
+servidor e cliente na mesma sessao, e *Build All Projects* compila os dois. O grupo e
+os dois `.dproj` que ele aponta sao escritos a mao e minimos, sem o entulho de deploy
+que a IDE gera; ela vai reescreve-los no primeiro save, e isso so suja a sua copia.
+
 | pasta | o que é | o que exercita |
 | --- | --- | --- |
 | `SimpleServer` | servidor mínimo, porta 8083 | `Routes = [crAll]` e o handler que só define o status |

@@ -26,6 +26,9 @@ uses
 type
   ERALRESTDWClientSQL = class(Exception);
 
+  { A operacao que o ComErro executa: Open, ExecSQL ou ApplyUpdates. }
+  TRALRESTDWOperacao = procedure of object;
+
   { Codigo do RDW manda o lote pela conexao: DataBase.ApplyUpdates(cache,...).
     O DataBase aqui e tipado como TRALDBConnection, para que quem trabalha ao
     modo do RAL tambem possa usa-lo, entao o metodo entra por um helper em vez
@@ -96,6 +99,9 @@ type
     /// repassados ao MassiveCache, que nao enxerga este pacote
     function ContarPendentes: IntegerRAL;
     procedure AplicarPendentes(var AError: Boolean; var AMessage: string);
+    { Roda a operacao e devolve a falha por qualquer das duas formas que ela
+      pode chegar - ver a implementacao. }
+    function ComErro(AOperacao: TRALRESTDWOperacao; var AError: string): Boolean;
     procedure SetSortFields(const AValue: StringRAL);
     procedure SetSortOrder(AValue: TRALRESTDWSortOrder);
     procedure SetSortCaseSens(AValue: TRALRESTDWSortCaseSens);
@@ -146,6 +152,10 @@ type
       viaja. O lote do RAL vai binario pelo TRALDBSQLCache, e nao ha JSON
       equivalente ao do RDW para devolver aqui. }
     function MassiveToJSON: StringRAL;
+    { A mensagem da ultima operacao que falhou, para quem desliga o RaiseErrors
+      e nao tem parametro de erro onde olhar - o Open, o Post e o Delete.
+      Cada operacao a limpa ao comecar. }
+    property LastError: StringRAL read FLastError;
     procedure ExecSQL; reintroduce; overload;
     { A forma do RDW: devolve False e a mensagem em vez de levantar excecao.
       Respeita o RaiseErrors do componente - com ele desligado o erro ja vinha
@@ -329,18 +339,11 @@ end;
 
 procedure TRALRESTDWClientSQL.AplicarPendentes(var AError: Boolean;
   var AMessage: string);
+var
+  vOperacao: TRALRESTDWOperacao;
 begin
-  AError := False;
-  AMessage := '';
-  try
-    Self.ApplyUpdates();
-  except
-    on E: Exception do
-    begin
-      AError := True;
-      AMessage := E.Message;
-    end;
-  end;
+  vOperacao := {$IFDEF FPC}@{$ENDIF}Self.ApplyUpdates;
+  AError := not ComErro(vOperacao, AMessage);
 end;
 
 procedure TRALRESTDWClientSQL.AplicarOrdenacao;
@@ -461,12 +464,19 @@ begin
     RefreshData;
 end;
 
-function TRALRESTDWClientSQL.ApplyUpdates(var AError: string): Boolean;
+{ A falha de uma operacao chega de duas formas, e as duas contam: como excecao,
+  quando RaiseErrors esta ligado, ou guardada pelo InternalError, quando esta
+  desligado. Olhar so a excecao fazia ExecSQL e ApplyUpdates devolverem True com
+  AError vazio em todo projeto que desligasse o RaiseErrors - a recusa do banco
+  sumia inteira, e quem chamou seguia achando que gravou. No RDW o RaiseErrors
+  decide se ha excecao, nao se o erro e contado. }
+function TRALRESTDWClientSQL.ComErro(AOperacao: TRALRESTDWOperacao;
+  var AError: string): Boolean;
 begin
   AError := '';
   Result := True;
   try
-    Self.ApplyUpdates();
+    AOperacao();
   except
     on E: Exception do
     begin
@@ -474,6 +484,22 @@ begin
       Result := False;
     end;
   end;
+
+  if Result and (FLastError <> '') then
+  begin
+    AError := String(FLastError);
+    FLastError := '';
+    Result := False;
+  end;
+end;
+
+function TRALRESTDWClientSQL.ApplyUpdates(var AError: string): Boolean;
+var
+  vOperacao: TRALRESTDWOperacao;
+begin
+  { a atribuicao tipada e o que escolhe a sobrecarga sem argumentos }
+  vOperacao := {$IFDEF FPC}@{$ENDIF}Self.ApplyUpdates;
+  Result := ComErro(vOperacao, AError);
 end;
 
 function TRALRESTDWClientSQL.MassiveCount: IntegerRAL;
@@ -488,18 +514,11 @@ begin
 end;
 
 function TRALRESTDWClientSQL.ExecSQL(var AError: string): Boolean;
+var
+  vOperacao: TRALRESTDWOperacao;
 begin
-  AError := '';
-  Result := True;
-  try
-    Self.ExecSQL();
-  except
-    on E: Exception do
-    begin
-      AError := E.Message;
-      Result := False;
-    end;
-  end;
+  vOperacao := {$IFDEF FPC}@{$ENDIF}Self.ExecSQL;
+  Result := ComErro(vOperacao, AError);
 end;
 
 procedure TRALRESTDWClientSQL.OpenJson(const AJson: StringRAL);

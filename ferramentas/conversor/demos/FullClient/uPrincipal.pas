@@ -248,7 +248,12 @@ Begin
  If RESTDWClientSQL1.MassiveType = mtMassiveCache Then
   Begin
    If Not RESTDWClientSQL1.ExecSQL(VError) Then
-    Application.MessageBox(PChar('Erro executando o comando ' + RESTDWClientSQL1.SQL.Text), 'Erro...', Mb_IconError + Mb_Ok)
+    //O motivo vem em VError e a demo nao o mostrava: com o SELECT que o memo
+    //traz, o banco recusa o ExecSQL (-310, Cannot execute command returning
+    //result sets) e a caixa dizia so 'erro executando o comando'. O Execute e
+    //para comando; para ver a grid o botao e o Open Fixo.
+    Application.MessageBox(PChar('Erro executando o comando ' + RESTDWClientSQL1.SQL.Text +
+                                 sLineBreak + sLineBreak + VError), 'Erro...', Mb_IconError + Mb_Ok)
    Else
     Application.MessageBox(PChar(Format('Comando executado com sucesso...Linhas Afetadas %d', [RESTDWClientSQL1.RowsAffected])), 'Informação !!!', Mb_iconinformation + Mb_Ok);
   End
