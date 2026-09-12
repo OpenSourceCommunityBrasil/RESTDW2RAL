@@ -326,10 +326,28 @@ package left, since the events, the client and the DataModule all live there. Th
 side needs the engine package just as much as the server: it is what registers the RAL
 engine in the executable. Three details are not optional:
 
-- **Both generations are recognised by prefix** (`RESTDW…`, `RESTDataWare…`, any case).
-  Phoenix alone ships seventeen package names and 1.4 spells its own differently
-  (`RESTDWLazDriver`, `RestDatawareIndySockets`, `restdatawarecomponents`), so a closed
-  list would go stale on the next RDW release.
+- **Every generation is recognised by prefix**, and there are four of them because RDW has
+  been renamed four times: `RESTDW…`, `RESTDataWare…`, `RestEasyObjects…` (what it was
+  called before REST Dataware - `resteasyobjectscore` is still what a 1.4 project from that
+  era depends on) and `RESTDriver…` (the drivers spelled without the DW: `RESTDriverFD`,
+  `RESTDriverZEOS`, `RESTDriverUniDAC`). A closed list would go stale on the next RDW
+  release - Phoenix alone ships seventeen package names. What must **not** match is
+  `TntUnicodeVcl`, which ships inside the RDW repo but belongs to a third party: removing it
+  breaks whoever uses those controls.
+- **The old core carried the transport inside it.** `resteasyobjectscore` and
+  `RestDatawareCORE` register `TRESTServicePooler` and `TDWClientREST` in the package
+  itself; only in 2.x did the transport move out to a sockets package. So that one package
+  maps to **two** of ours - the engine shell *and* `RALRESTDW` - which is why the mapping
+  fills a list instead of returning one name. Mapping it to the base alone leaves the
+  project with no engine at all.
+- **`RALRESTDWDB` is decided by what the project uses, not by which package left.** A thin
+  client with a `TRESTDWClientSQL` depends on no driver package, and its shell still lives
+  in `RALRESTDWDB`. `ExaminarProjeto` - the pre-pass that already looks for the DataModule
+  class - answers that for the whole folder into `FUsaBanco`, because the `.lpi` may be
+  converted before the `.pas` that uses the component. Watch out when testing this one: the
+  three Lazarus packages all write their units to the same `pkg/lazarus/lib/$(TargetCPU)-$(TargetOS)`,
+  so depending on any one of them puts the other two's units on the search path and a
+  missing dependency still compiles here.
 - **Both file formats must survive.** Lazarus writes the list either as repeated `<Item>`
   or, older, as `Count="N"` with `<Item1>…<ItemN>`, and it picks how to *read* by whether
   that `Count` attribute exists (`TXMLConfig.IsLegacyList`). Converting one into the other

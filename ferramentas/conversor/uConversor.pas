@@ -74,6 +74,9 @@ type
     FConverterTransporte: Boolean;
     FServidorRAL: string;
     FClasseModulo: string;
+    { o projeto usa a metade de banco - resposta do conjunto, nao de um arquivo,
+      e e o que decide se o RALRESTDWDB entra nas dependencias do .lpi }
+    FUsaBanco: Boolean;
     FLidos: Integer;
     FAlterados: Integer;
     FTotalAlteracoes: Integer;
@@ -112,8 +115,9 @@ type
     procedure ReescreverBloco(ALinhas, ASaida: TStringList; var AIdx: Integer;
                               const AArquivo, ANome, AClasseOrig, AClasseNova,
                               AMapa: string; var AQtd: Integer);
-    { Qual pacote deste projeto entra no lugar de um do RDW }
-    function PacoteEquivalente(const APacoteRDW: string): string;
+    { Quais pacotes deste projeto entram no lugar de um do RDW }
+    function PacotesEquivalentes(const APacoteRDW: string;
+                                 ALista: TStrings): Boolean;
     { O projeto do Lazarus: e no .lpi que moram as dependencias de pacote }
     function ConverterLPI(const ATexto: RawByteString; const AArquivo: string;
                           var AQtd: Integer): RawByteString;
@@ -122,8 +126,9 @@ type
     function ConverterPAS(const ATexto: RawByteString; const AArquivo: string;
                           out AQtd: Integer): RawByteString;
     procedure Converter(const AArquivo: string);
-    /// Acha no projeto a classe do DataModule que carrega os ServerEvents
-    procedure DescobrirClasseModulo(const ACaminho: string);
+    { Uma passada pelo projeto antes de converter: a classe do DataModule dos
+      eventos e se o projeto usa a metade de banco }
+    procedure ExaminarProjeto(const ACaminho: string);
   public
     constructor Create;
 
@@ -222,6 +227,17 @@ const
     'TRESTDWApolloDBDriver',
     'TRESTDWDBExpressDriver',
     'TRESTDWInterbaseDriver'
+  );
+
+  { As classes cuja casca mora no pacote RALRESTDWDB. No Delphi o library path
+    do IDE resolve a unit e ninguem percebe; no Lazarus o pacote tem de estar
+    declarado no .lpi, entao quem usa uma destas precisa do RALRESTDWDB junto. }
+  cClassesDeBanco: array[0..4] of string = (
+    'TRESTDWClientSQL',
+    'TRESTDWPoolerDB',
+    'TRESTDWIdDatabase',
+    'TRESTDWDataBase',
+    'TRESTDWFireDACDriver'
   );
 
   { Eventos que so existiam no TServerMethodDataModule e nao tem equivalente.
@@ -705,10 +721,34 @@ end;
 { De quem e o pacote. Prefixo em vez de lista fechada: sao dezessete so no
   Phoenix, o 1.4 batiza os dele de outro jeito - RESTDWLazDriver,
   RestDatawareIndySockets, restdatawarecomponents - e as duas geracoes passam
-  por aqui. O que identifica e o comeco do nome, em qualquer caixa. }
+  por aqui. O que identifica e o comeco do nome, em qualquer caixa.
+
+  Sao quatro prefixos porque o RDW ja teve quatro nomes: RestEasyObjects e como
+  ele se chamava antes de ser REST Dataware, e o resteasyobjectscore continua
+  sendo a dependencia de projeto de 1.4 que vem daquela epoca. RESTDriver pega
+  os drivers de banco batizados sem o DW no meio (RESTDriverFD, RESTDriverZEOS,
+  RESTDriverUniDAC).
+
+  O que **nao** entra aqui e o TntUnicodeVcl, que vem junto no repositorio do
+  RDW mas e de terceiro: tirar do projeto quebraria quem usa os controles. }
 function PacoteEhRDW(const ANome: string): Boolean;
 begin
-  Result := StartsText('RESTDW', ANome) or StartsText('RESTDataWare', ANome);
+  Result := StartsText('RESTDW', ANome) or
+            StartsText('RESTDataWare', ANome) or
+            StartsText('RestEasyObjects', ANome) or
+            StartsText('RESTDriver', ANome);
+end;
+
+{ True para o core da geracao antiga, que trazia o transporte dentro dele.
+
+  O resteasyobjectscore e o RestDatawareCORE registram TRESTServicePooler e
+  TDWClientREST no proprio pacote - o 2.x so passou o transporte para um pacote
+  de sockets a parte. Quem depende de um deles fica sem motor nenhum se sair
+  daqui apenas o pacote base. }
+function PacoteAntigoComTransporte(const ANome: string): Boolean;
+begin
+  Result := StartsText('RestEasyObjects', ANome) or
+            StartsText('RestDatawareCORE', ANome);
 end;
 
 { O valor de um Value="..." da linha. Devolve string porque nome de pacote e
@@ -975,13 +1015,14 @@ end;
 
 { Acha a classe do DataModule que tem um TRESTDWServerEvents dentro: e o valor
   que o TRALRESTDWModule precisa em ClassModule para publicar as rotas. }
-procedure TConversor.DescobrirClasseModulo(const ACaminho: string);
+procedure TConversor.ExaminarProjeto(const ACaminho: string);
 var
   vArquivo, vTexto, vLinha, vClasse: string;
   vLinhas, vArquivos: TStringList;
-  vInt1, vInt2, vPos: Integer;
+  vInt1, vInt2, vInt3, vPos: Integer;
 begin
-  if (FClasseModulo <> '') or (not DirectoryExists(ACaminho)) then
+  FUsaBanco := False;
+  if not DirectoryExists(ACaminho) then
     Exit;
 
   vArquivos := TStringList.Create;
@@ -994,7 +1035,19 @@ begin
       Continue;
 
     vTexto := LerTextoAnsi(vArquivo);
-    if not ContainsText(vTexto, 'TRESTDWServerEvents') then
+
+    { a metade de banco: quem usa uma dessas classes precisa do RALRESTDWDB
+      declarado, e e a passada inteira que responde isso - o .lpi pode vir
+      antes do .pas que as usa }
+    if not FUsaBanco then
+      for vInt3 := Low(cClassesDeBanco) to High(cClassesDeBanco) do
+        if ContainsText(vTexto, cClassesDeBanco[vInt3]) then
+        begin
+          FUsaBanco := True;
+          Break;
+        end;
+
+    if (FClasseModulo <> '') or (not ContainsText(vTexto, 'TRESTDWServerEvents')) then
       Continue;
 
     vLinhas := TStringList.Create;
@@ -1013,13 +1066,16 @@ begin
         else if (vClasse <> '') and ContainsText(vLinha, ': TRESTDWServerEvents;') then
         begin
           FClasseModulo := vClasse;
-          { o finally de fora ainda roda: nada vaza ao sair daqui }
-          Exit;
+          Break;
         end;
       end;
     finally
       FreeAndNil(vLinhas);
     end;
+
+    // as duas respostas na mao: nao ha mais o que procurar
+    if FUsaBanco and (FClasseModulo <> '') then
+      Break;
     end;
   finally
     FreeAndNil(vArquivos);
@@ -1338,7 +1394,7 @@ begin
   end;
 end;
 
-{ Qual pacote deste projeto entra no lugar do que saiu:
+{ Os pacotes deste projeto que entram no lugar de um do RDW - podem ser dois:
 
     driver ou link  -> a metade de banco
     socket ou shell -> o transporte, que depende do motor escolhido. Vale para
@@ -1346,32 +1402,60 @@ end;
                        a engine do RAL dentro do executavel, e sem ele o
                        cliente compila e nao acha engine nenhuma em tempo de
                        execucao
-    o resto         -> o pacote base, com eventos, cliente e DataModule
+    core antigo     -> transporte **e** base, porque naquela geracao os dois
+                       vinham no mesmo pacote
+    o resto         -> so a base, que o ConverterLPI acrescenta de qualquer
+                       jeito quando alguma dependencia do RDW sai
 
-  O jClient do LAMW cai no base de proposito: e cliente, e o cliente mora la. }
-function TConversor.PacoteEquivalente(const APacoteRDW: string): string;
+  O jClient do LAMW cai no base de proposito: e cliente, e o cliente mora la.
+
+  Devolve False quando faltou o pacote do transporte - o unico caso em que o
+  pacote do RDW tem de ficar onde esta. }
+function TConversor.PacotesEquivalentes(const APacoteRDW: string;
+  ALista: TStrings): Boolean;
 var
   vServidores: TServidoresRAL;
+  vCasca: string;
   vInt1: Integer;
 begin
+  Result := True;
+
   if ContainsText(APacoteRDW, 'Driver') or ContainsText(APacoteRDW, 'Link') then
-    Exit('RALRESTDWDB');
+  begin
+    ALista.Add('RALRESTDWDB');
+    Exit;
+  end;
 
   if not (ContainsText(APacoteRDW, 'Socket') or
-          ContainsText(APacoteRDW, 'Shell')) then
-    Exit('RALRESTDW');
+          ContainsText(APacoteRDW, 'Shell') or
+          PacoteAntigoComTransporte(APacoteRDW)) then
+  begin
+    ALista.Add('RALRESTDW');
+    Exit;
+  end;
 
   { o transporte so tem substituto quando o motor escolhido tem casca aqui -
     e quando a conversao do transporte esta ligada, senao a classe do RDW
     continua no formulario e o pacote dela ainda faz falta }
-  Result := '';
-  if not FConverterTransporte then
-    Exit;
+  vCasca := '';
+  if FConverterTransporte then
+  begin
+    vServidores := ServidoresRAL;
+    for vInt1 := Low(vServidores) to High(vServidores) do
+      if SameText(vServidores[vInt1].Classe, FServidorRAL) then
+      begin
+        vCasca := vServidores[vInt1].PacoteCasca;
+        Break;
+      end;
+  end;
 
-  vServidores := ServidoresRAL;
-  for vInt1 := Low(vServidores) to High(vServidores) do
-    if SameText(vServidores[vInt1].Classe, FServidorRAL) then
-      Exit(vServidores[vInt1].PacoteCasca);
+  if vCasca = '' then
+    Exit(False);
+
+  ALista.Add(vCasca);
+  // o core antigo era as duas coisas, entao leva a base junto
+  if PacoteAntigoComTransporte(APacoteRDW) then
+    ALista.Add('RALRESTDW');
 end;
 
 { O .lpi e o projeto do Lazarus, e e nele que moram as dependencias de pacote.
@@ -1396,7 +1480,7 @@ var
   vPos, vFim, vLinhaIni, vIniBloco, vFimBloco, vInt1, vIndice: Integer;
   vLinha, vEOL, vAbertura, vCorpo, vItem, vRecuo, vTag: RawByteString;
   vPacote, vNovo, vMotivo: string;
-  vNovos: TStringList;
+  vNovos, vTrocas: TStringList;
   vNoItem, vLegado: Boolean;
 begin
   Result := ATexto;
@@ -1404,6 +1488,7 @@ begin
     Exit;
 
   vNovos := TStringList.Create;
+  vTrocas := TStringList.Create;
   try
     vNovos.Sorted := True;
     vNovos.Duplicates := dupIgnore;
@@ -1487,10 +1572,18 @@ begin
 
       if PacoteEhRDW(vPacote) then
       begin
-        vNovo := PacoteEquivalente(vPacote);
-        if vNovo <> '' then
+        vTrocas.Clear;
+        if PacotesEquivalentes(vPacote, vTrocas) then
         begin
-          vNovos.Add(vNovo);
+          vNovo := '';
+          for vInt1 := 0 to vTrocas.Count - 1 do
+          begin
+            vNovos.Add(vTrocas[vInt1]);
+            if vNovo <> '' then
+              vNovo := vNovo + ' + ';
+            vNovo := vNovo + vTrocas[vInt1];
+          end;
+
           Avisar(AArquivo, Format('dependencia de pacote %s -> %s',
                  [vPacote, vNovo]), taRenomeado);
           Inc(AQtd);
@@ -1526,6 +1619,13 @@ begin
       cliente e o DataModule }
     vNovos.Add('RALRESTDW');
 
+    { e a metade de banco entra quando o projeto usa uma das classes dela, mesmo
+      que nenhum pacote de driver tenha saido: um cliente magro com
+      TRESTDWClientSQL nao depende de driver nenhum, e mesmo assim precisa do
+      RALRESTDWDB, que e onde a casca desse dataset mora }
+    if FUsaBanco then
+      vNovos.Add('RALRESTDWDB');
+
     for vInt1 := 0 to vNovos.Count - 1 do
     begin
       // ja declarado: converter duas vezes nao duplica a dependencia
@@ -1551,6 +1651,7 @@ begin
     Result := Copy(ATexto, 1, vIniBloco - 1) + vAbertura + vCorpo +
               Copy(ATexto, vFimBloco, MaxInt);
   finally
+    FreeAndNil(vTrocas);
     FreeAndNil(vNovos);
   end;
 end;
@@ -2022,7 +2123,7 @@ begin
 
   if FileExists(vCaminho) then
   begin
-    DescobrirClasseModulo(ExtractFilePath(vCaminho));
+    ExaminarProjeto(ExtractFilePath(vCaminho));
     Converter(vCaminho);
     Exit;
   end;
@@ -2030,8 +2131,8 @@ begin
   if not DirectoryExists(vCaminho) then
     raise Exception.CreateFmt('Caminho nao encontrado: %s', [vCaminho]);
 
-  // duas passadas: a classe do DataModule precisa ser conhecida antes do DFM
-  DescobrirClasseModulo(vCaminho);
+  // duas passadas: o que o conjunto responde precisa ser sabido antes do DFM
+  ExaminarProjeto(vCaminho);
 
   vArquivos := TStringList.Create;
   try

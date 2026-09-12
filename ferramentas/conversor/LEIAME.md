@@ -116,8 +116,9 @@ máquina — e não exige os daqui. O resultado é um projeto que não abre.
 
 | pacote do RDW | vira |
 | --- | --- |
-| o que tem `Driver` ou `Link` no nome (`RESTDWLazarusDriver`, `RESTDWNativeLinkSQLDB`, `restdwdriverzeos`, …) | `RALRESTDWDB` |
+| o que tem `Driver` ou `Link` no nome (`RESTDWLazarusDriver`, `RESTDWNativeLinkSQLDB`, `restdwdriverzeos`, `RESTDriverZEOS`, …) | `RALRESTDWDB` |
 | o que tem `Socket` ou `Shell` (`RESTDWIndySockets`, `RestDatawareIndySockets`, `RESTDWShellServices`, …) | o pacote da casca do motor escolhido — hoje `RALRESTDWIndy` |
+| o core da geração antiga (`resteasyobjectscore`, `RestDatawareCORE`) | `RALRESTDWIndy` **e** `RALRESTDW` |
 | o resto (`RESTDataWareComponents`, `restdatawarecomponents`, `restdwjClientLAMW`, …) | `RALRESTDW` |
 
 O `RALRESTDW` entra sempre que alguma dependência do RDW saiu: é dele que vêm os
@@ -125,11 +126,21 @@ eventos, o cliente e o DataModule. Vale para projeto cliente também — é o pa
 motor que registra a engine do RAL dentro do executável, e sem ele o cliente compila
 e não acha engine nenhuma em tempo de execução.
 
-Reconhece as duas gerações pelo começo do nome (`RESTDW…` e `RESTDataWare…`, em
-qualquer caixa), que é o que RDW 1.4 e Phoenix têm em comum, e **mantém o formato do
-arquivo**: o Lazarus escreve a lista de dois jeitos — `<Item>` repetido, ou
-`Count="N"` com `<Item1>…<ItemN>` — e o que entrou nesse formato sai nele, com os
-itens renumerados e o `Count` corrigido. Rodar duas vezes não duplica dependência.
+O **core da geração antiga vale por dois** porque registrava o `TRESTServicePooler` e o
+`TDWClientREST` dentro dele mesmo; só no 2.x o transporte saiu para um pacote de sockets
+à parte. Quem depende só dele ficaria sem motor nenhum.
+
+O **`RALRESTDWDB` entra pelo que o projeto usa**, e não só quando sai um pacote de driver:
+um cliente magro com `TRESTDWClientSQL` não depende de driver nenhum e mesmo assim precisa
+dele, que é onde mora a casca desse dataset.
+
+São quatro prefixos, porque o RDW já teve quatro nomes: `RESTDW…`, `RESTDataWare…`,
+`RestEasyObjects…` (como ele se chamava antes) e `RESTDriver…`. O que **não** é mexido é
+o `TntUnicodeVcl`, que vem junto no repositório do RDW mas é de terceiro.
+
+**Mantém o formato do arquivo**: o Lazarus escreve a lista de dois jeitos — `<Item>`
+repetido, ou `Count="N"` com `<Item1>…<ItemN>` — e o que entrou nesse formato sai nele,
+com os itens renumerados e o `Count` corrigido. Rodar duas vezes não duplica dependência.
 
 Quando o motor escolhido ainda não tem casca aqui, ou quando o transporte ficou de
 fora (`--sem-transporte`), a dependência de transporte do RDW **fica onde está**, com
